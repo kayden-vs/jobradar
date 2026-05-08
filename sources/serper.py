@@ -91,18 +91,15 @@ def extract_job_from_page(url: str, title_hint: str, company_hint: str) -> dict 
 
     try:
         # Try fast plain HTTP request first (Fetcher uses .get(), NOT .fetch())
-        fetcher = Fetcher()
-        fetcher.configure(timeout=15)
-        page = fetcher.get(url)
+        page = Fetcher().get(url, timeout=15)
 
         # Look for job-related content signals
         body_text = page.get_all_text(ignore_tags=["script", "style", "nav", "footer"])
         if len(body_text) < 200:
             # Page might need JS rendering — retry with stealthy browser
             time.sleep(2)  # Extra delay before browser fetch
-            fetcher2 = StealthyFetcher()
-            fetcher2.configure(headless=True, network_idle=True)
-            page = fetcher2.fetch(url)
+            # Note: headless and network_idle are valid StealthyFetcher.fetch() params
+            page = StealthyFetcher.fetch(url, headless=True, network_idle=True)
             body_text = page.get_all_text(ignore_tags=["script", "style", "nav", "footer"])
 
 

@@ -25,13 +25,10 @@ def fetch_cutshort() -> list[dict]:
     all_jobs = []
     seen_urls = set()
     
-    fetcher = StealthyFetcher()
-    fetcher.configure(headless=True, network_idle=True)
-
     for query in CUTSHORT_QUERIES:
         try:
             search_url = f"{BASE_URL}?q={query.replace(' ', '+')}&remote=true"
-            page = fetcher.fetch(search_url)
+            page = StealthyFetcher.fetch(search_url, headless=True, network_idle=True)
             
             # Job cards on Cutshort
             job_cards = page.css(".job-card") or page.css("[data-testid='job-card']")
@@ -74,9 +71,7 @@ def fetch_job_description(url: str) -> str:
     Called only for jobs that pass the pre-filter.
     """
     try:
-        fetcher = StealthyFetcher()
-        fetcher.configure(headless=True, network_idle=True)
-        page = fetcher.fetch(url)
+        page = StealthyFetcher.fetch(url, headless=True, network_idle=True)
         desc = page.css(".job-description, [data-testid='job-description']")
         return desc[0].text if desc else ""
     except Exception as e:

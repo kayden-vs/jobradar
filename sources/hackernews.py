@@ -2,6 +2,7 @@ import requests
 import logging
 import json
 import os
+import re
 import time
 from datetime import datetime
 from groq import Groq
@@ -81,25 +82,62 @@ def get_current_thread_id() -> int | None:
     return _autodiscover_thread_id(now.year, now.month)
 
 
-def fetch_hn_comments(thread_id: int) -> list[str]:
-    """Fetch all top-level comments from an HN thread."""
-    # Get thread item
+def fetch_hn_comments(thread_id: int, max_comments: int = 60) -> list[str]:
+    """
+    Fetch top-level comments from an HN thread.
+    Capped at max_comments to control Groq token usage:
+    60 comments × ~800 tokens/batch → ~4,800 tokens for HN parsing,
+    leaving the daily 100k budget for scoring.
+    """
     r = requests.get(f"{HN_API}/item/{thread_id}.json", timeout=10)
     thread = r.json()
-    
-    kid_ids = thread.get("kids", [])[:150]  # Top 150 comments
+
+    kid_ids = thread.get("kids", [])[:max_comments]   # Hard cap here
     comments = []
-    
+
     for kid_id in kid_ids:
         try:
             r2 = requests.get(f"{HN_API}/item/{kid_id}.json", timeout=5)
             item = r2.json()
             if item and item.get("text") and not item.get("deleted"):
-                comments.append(item["text"])
+                # Strip HTML tags — saves ~30% tokens and improves parsing
+                clean_text = re.sub(r'<[^>]+>', ' ', item["text"])
+                clean_text = re.sub(r'\s+', ' ', clean_text).strip()
+                if len(clean_text) > 50:   # Skip trivial one-liners
+                    comments.append(clean_text)
         except Exception:
             continue
-    
+
     return comments
+
+
+def _is_valid_job(job: dict) -> bool:
+    """
+    Post-AI filter: rejects discussion threads / candidate posts that
+    the AI incorrectly extracted as jobs. These slip through because the
+    HN thread contains them mixed with actual job postings.
+    """
+    title = job.get("title", "").strip()
+    if len(title) < 4:
+        return False
+
+    # These patterns are discussion threads, not job postings
+    non_job_prefixes = (
+        "how do", "why do", "advice on", "job market",
+        "anyone else", "is it just", "what is", "remote job -",
+        "backend / systems",  # candidate post pattern
+    )
+    title_lower = title.lower()
+    if any(title_lower.startswith(p) for p in non_job_prefixes):
+        return False
+
+    # Must have at least a company or url to be a real posting
+    has_company = bool(job.get("company", "").strip())
+    has_url     = bool(job.get("url", "").strip())
+    if not has_company and not has_url:
+        return False
+
+    return True
 
 
 def parse_comments_with_ai(comments: list[str]) -> list[dict]:
@@ -163,9 +201,10 @@ Comments:
                 jobs = []
 
             for job in jobs:
-                job["source"]    = "hackernews"
-                job["posted_at"] = datetime.now().isoformat()
-            all_jobs.extend(jobs)
+                if _is_valid_job(job):
+                    job["source"]    = "hackernews"
+                    job["posted_at"] = datetime.now().isoformat()
+                    all_jobs.append(job)
 
         except Exception as e:
             logger.warning(f"HN AI parsing batch {i} failed: {e}")
