@@ -47,7 +47,7 @@ def check_location(description: str, title: str, profile: dict) -> tuple[bool, s
 
 
 def check_company_blacklist(company: str, profile: dict) -> tuple[bool, str]:
-    blacklist = [c.lower() for c in profile["hard_reject"]["company_blacklist"]]
+    blacklist = [c.lower() for c in (profile["hard_reject"].get("company_blacklist") or [])]
     if company.lower() in blacklist:
         return True, f"Company blacklisted: {company}"
     return False, ""
@@ -55,7 +55,7 @@ def check_company_blacklist(company: str, profile: dict) -> tuple[bool, str]:
 
 def check_role_blacklist(title: str, profile: dict) -> tuple[bool, str]:
     title_lower = title.lower()
-    for role in profile["hard_reject"]["role_blacklist"]:
+    for role in (profile["hard_reject"].get("role_blacklist") or []):
         if role.lower() in title_lower:
             return True, f"Role blacklisted: {role}"
     return False, ""

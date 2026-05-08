@@ -87,7 +87,7 @@ Return ONLY a valid JSON object with these exact keys:
 
 def score_job(job: dict, profile: dict) -> dict:
     """Score a single job with Gemini. Returns job dict with score fields added."""
-    model = genai.GenerativeModel("gemini-1.5-flash")
+    model = genai.GenerativeModel("gemini-2.0-flash")
     
     try:
         prompt = build_scoring_prompt(job, profile)

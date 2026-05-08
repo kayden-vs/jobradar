@@ -24,5 +24,5 @@ def deduplicate(jobs: list[dict]) -> list[dict]:
         seen_this_run.add(job_id)
         new_jobs.append(job)
     
-    logger.info(f"Dedup: {len(jobs)} raw → {len(new_jobs)} new")
+    logger.info(f"Dedup: {len(jobs)} raw -> {len(new_jobs)} new")
     return new_jobs

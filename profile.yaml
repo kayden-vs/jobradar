@@ -1,8 +1,21 @@
 # profile.yaml — YOUR job search preferences
 # Keep this accurate. The AI uses this to score every job.
 
+# ─────────────────────────────────────────────────────────────────
+# SOURCE TOGGLES — set to false to skip a source completely
+# ─────────────────────────────────────────────────────────────────
+sources:
+  ats:        true   # Greenhouse / Lever / Ashby / Workable API polling (most reliable)
+  cutshort:   true   # Cutshort.io scraping
+  instahyre:  true   # Instahyre API + scraping fallback
+  wellfound:  false  # DISABLED — blocks requests / shows verification wall
+  serper:     true   # Google search dork discovery via Serper.dev
+  hackernews: true   # HN "Who is Hiring?" monthly thread
+  reddit:     true   # Reddit RSS feeds
+
+
 candidate:
-  name: "Your Name"
+  name: "Rohit Kumar Roy"
   
   # What you're looking for
   roles:
@@ -37,12 +50,12 @@ candidate:
       - "Golang"
       - "REST APIs"
       - "PostgreSQL"
+      - "gRPC"
       - "Docker"
       - "Git"
     learning:
       - "Kubernetes"
       - "Redis"
-      - "gRPC"
       - "AWS"
 
   # Notable projects for context-based scoring
@@ -88,7 +101,7 @@ candidate:
 
   # Compensation
   salary:
-    min_stipend_inr: 15000           # per month for internships
+    min_stipend_inr: 10000           # per month for internships
     min_ctc_lpa: 4.0                 # for full-time fresher roles
 
 # Hard reject rules — checked BEFORE AI, saves tokens
@@ -111,15 +124,15 @@ hard_reject:
 
   company_blacklist:
     # IT services / consultancies — typically not product work
-    - "TCS"
-    - "Infosys"
-    - "Wipro"
-    - "HCL"
-    - "Cognizant"
-    - "Accenture"
-    - "Capgemini"
-    - "Tech Mahindra"
-    - "Mphasis"
+    # - "TCS"
+    # - "Infosys"
+    # - "Wipro"
+    # - "HCL"
+    # - "Cognizant"
+    # - "Accenture"
+    # - "Capgemini"
+    # - "Tech Mahindra"
+    # - "Mphasis"
 
   role_blacklist:
     # Unrelated roles that might appear in searches

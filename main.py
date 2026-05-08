@@ -1,6 +1,7 @@
 import logging
 import asyncio
 import os
+import sys
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -8,13 +9,19 @@ load_dotenv()
 # Ensure data/ directory exists before FileHandler tries to open the log file
 os.makedirs("data", exist_ok=True)
 
+# Force UTF-8 on Windows console to prevent cp1252 UnicodeEncodeError
+# (Windows terminal defaults to cp1252 which can't handle many Unicode chars)
+stream_handler = logging.StreamHandler(stream=open(
+    sys.stdout.fileno(), 'w', encoding='utf-8', closefd=False
+))
+
 # Configure logging
 logging.basicConfig(
     level   = logging.INFO,
     format  = "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler("data/jobradar.log"),
+        stream_handler,
+        logging.FileHandler("data/jobradar.log", encoding="utf-8"),
     ]
 )
 logger = logging.getLogger("jobradar")
@@ -44,32 +51,50 @@ def run():
     companies = load_companies()
     
     # --- SOURCE LAYER ---
-    # Each source is independent — a failure in one doesn't stop the rest
+    # Control which sources run via profile.yaml `sources:` block.
+    # Any source set to false is skipped entirely.
+    sources_cfg = profile.get("sources", {})
+
+    def source_enabled(name: str) -> bool:
+        """Returns True unless the source is explicitly set to false."""
+        enabled = sources_cfg.get(name, True)
+        if not enabled:
+            logger.info(f"--- Skipping {name} (disabled in profile.yaml) ---")
+        return enabled
+
     raw_jobs = []
-    
-    logger.info("--- Fetching ATS endpoints ---")
-    raw_jobs.extend(fetch_all_ats(companies))
-    
-    logger.info("--- Fetching Cutshort ---")
-    raw_jobs.extend(fetch_cutshort())
-    
-    logger.info("--- Fetching Instahyre ---")
-    raw_jobs.extend(fetch_instahyre())
-    
-    logger.info("--- Fetching Wellfound ---")
-    raw_jobs.extend(fetch_wellfound())
-    
-    logger.info("--- Fetching via Serper discovery ---")
-    raw_jobs.extend(fetch_serper_jobs())
-    
-    logger.info("--- Fetching HackerNews ---")
-    raw_jobs.extend(fetch_hn_hiring())
-    
-    logger.info("--- Fetching Reddit ---")
-    raw_jobs.extend(fetch_reddit())
-    
+
+    if source_enabled("ats"):
+        logger.info("--- Fetching ATS endpoints ---")
+        raw_jobs.extend(fetch_all_ats(companies))
+
+    if source_enabled("cutshort"):
+        logger.info("--- Fetching Cutshort ---")
+        raw_jobs.extend(fetch_cutshort())
+
+    if source_enabled("instahyre"):
+        logger.info("--- Fetching Instahyre ---")
+        raw_jobs.extend(fetch_instahyre())
+
+    if source_enabled("wellfound"):
+        logger.info("--- Fetching Wellfound ---")
+        raw_jobs.extend(fetch_wellfound())
+
+    if source_enabled("serper"):
+        logger.info("--- Fetching via Serper discovery ---")
+        raw_jobs.extend(fetch_serper_jobs())
+
+    if source_enabled("hackernews"):
+        logger.info("--- Fetching HackerNews ---")
+        raw_jobs.extend(fetch_hn_hiring())
+
+    if source_enabled("reddit"):
+        logger.info("--- Fetching Reddit ---")
+        raw_jobs.extend(fetch_reddit())
+
     total_raw = len(raw_jobs)
     logger.info(f"Total raw jobs from all sources: {total_raw}")
+
     
     # --- DEDUPLICATION ---
     new_jobs = deduplicate(raw_jobs)
@@ -100,7 +125,8 @@ def run():
     ))
     
     logger.info("Pipeline complete.")
-    logger.info(f"Summary: {total_raw} raw → {len(new_jobs)} new → {len(eligible_jobs)} eligible → {len(urgent_jobs)} urgent")
+    logger.info(f"Summary: {total_raw} raw -> {len(new_jobs)} new -> {len(eligible_jobs)} eligible -> {len(urgent_jobs)} urgent")
+
 
 
 if __name__ == "__main__":
