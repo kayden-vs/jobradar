@@ -107,9 +107,12 @@ def check_title_relevance(title: str) -> tuple[bool, str]:
     # Common non-tech roles that waste scoring budget
     reject_roles = [
         "sales", "marketing", "hr ", "human resources", "recruiter",
-        "accountant", "finance manager", "business analyst", "graphic",
-        "content writer", "seo", "social media", "operations manager",
-        "customer success", "account manager",
+        "accountant", "finance", "business analyst", "graphic",
+        "content", "seo", "social media", "operations",
+        "customer success", "account manager", "manager", "senior",
+        "sr.", "sr ", "lead", "director", "vp", "president", "head of",
+        "principal", "staff", "architect", "associate", "chief of staff",
+        "deputy", "writer", "editor", "research", "iii", "iv", " am/"
     ]
     for role in reject_roles:
         if role in title_lower:
