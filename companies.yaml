@@ -1,0 +1,41 @@
+# companies.yaml
+# Add/remove as you discover more companies using each ATS
+# Find a company's ATS by checking their careers page URL
+
+greenhouse:
+  - razorpay
+  - browserstack
+  - innovaccer
+  - unacademy
+  - mpl-gaming
+  - groww
+  - zepto
+  - cred
+  - slice-card
+  - open-financial-technologies
+  - smallcase
+  - niyo
+  - fi-money
+  - jupiter-money
+  - kreditbee
+
+lever:
+  - meesho
+  - swiggy
+  - zomato
+  - urban-company
+  - ola
+  - navi-technologies
+  - lendingkart
+  - indmoney
+  - cube-wealth
+  - recur-club
+
+ashby:
+  - setu                   # payments infra startup
+  - decentro
+  - cashfree-payments
+
+workable:
+  - juspay
+  - sarvam-ai

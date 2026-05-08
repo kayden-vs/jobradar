@@ -1,0 +1,144 @@
+# profile.yaml — YOUR job search preferences
+# Keep this accurate. The AI uses this to score every job.
+
+candidate:
+  name: "Your Name"
+  
+  # What you're looking for
+  roles:
+    primary:
+      - "Backend Engineering Intern"
+      - "Software Engineering Intern"
+      - "Junior Backend Developer"
+      - "Backend Developer Fresher"
+      - "Go Developer Intern"
+      - "Golang Developer Fresher"
+    secondary:
+      - "Full Stack Intern"
+      - "Full Stack Developer Fresher"
+      - "Software Developer Fresher"
+
+  # Experience level — CRITICAL
+  experience:
+    years: 0                        # You are a fresher
+    max_required: 1                 # HARD REJECT if job requires more than this
+    acceptable_labels:
+      - "fresher"
+      - "0-1 years"
+      - "intern"
+      - "entry level"
+      - "junior"
+      - "0 years"
+
+  # Tech stack (in order of preference)
+  skills:
+    strong:
+      - "Go"
+      - "Golang"
+      - "REST APIs"
+      - "PostgreSQL"
+      - "Docker"
+      - "Git"
+    learning:
+      - "Kubernetes"
+      - "Redis"
+      - "gRPC"
+      - "AWS"
+
+  # Notable projects for context-based scoring
+  projects:
+    - name: "Crypto Exchange"
+      description: "Built a full crypto exchange from scratch in Go with order matching engine, real-time price feeds, wallet management, and trade execution"
+      relevance_signal: "Fintech, crypto, trading, payments, Go, high-performance systems"
+
+  # Location preferences
+  location:
+    base: "Kolkata, India"
+    acceptable:
+      - "Remote"
+      - "Work from home"
+      - "Anywhere in India"           # open to relocate
+      - "Bangalore"
+      - "Mumbai"
+      - "Hyderabad"
+      - "Delhi NCR"
+      - "Chennai"
+    hard_reject:
+      - "US only"
+      - "UK only"
+      - "Europe only"
+      - "On-site outside India"
+
+  # Industry preferences (affects bonus scoring)
+  industries:
+    high_priority:                   # +2 score bonus
+      - "Fintech"
+      - "Crypto"
+      - "Blockchain"
+      - "Payments"
+      - "Trading"
+      - "Banking technology"
+      - "Financial services"
+    medium_priority:                 # +1 score bonus
+      - "SaaS"
+      - "Developer tools"
+      - "Infrastructure"
+      - "API-first companies"
+      - "E-commerce backend"
+
+  # Compensation
+  salary:
+    min_stipend_inr: 15000           # per month for internships
+    min_ctc_lpa: 4.0                 # for full-time fresher roles
+
+# Hard reject rules — checked BEFORE AI, saves tokens
+hard_reject:
+  experience_keywords:
+    # If ANY of these appear in the job description → immediate reject
+    - "2+ years"
+    - "2 years experience"
+    - "3+ years"
+    - "4+ years"
+    - "5+ years"
+    - "minimum 2 years"
+    - "at least 2 years"
+    - "senior engineer"
+    - "senior developer"
+    - "lead engineer"
+    - "tech lead"
+    - "principal engineer"
+    - "staff engineer"
+
+  company_blacklist:
+    # IT services / consultancies — typically not product work
+    - "TCS"
+    - "Infosys"
+    - "Wipro"
+    - "HCL"
+    - "Cognizant"
+    - "Accenture"
+    - "Capgemini"
+    - "Tech Mahindra"
+    - "Mphasis"
+
+  role_blacklist:
+    # Unrelated roles that might appear in searches
+    - "Data Scientist"
+    - "Machine Learning Engineer"
+    - "DevOps Engineer"               # unless it also has backend component
+    - "QA Engineer"
+    - "Test Engineer"
+    - "Business Analyst"
+    - "Product Manager"
+    - "UI Designer"
+    - "Frontend Developer"            # unless full-stack
+
+# Scoring weights (used in AI prompt)
+scoring_weights:
+  golang_mentioned: +2
+  fintech_crypto_company: +2
+  remote_or_india: +1
+  project_stack_match: +2           # if your crypto exchange is relevant
+  exact_role_match: +2
+  mentions_equity_esop: +0.5
+  unknown_company: -0.5             # slight penalty for no-info companies

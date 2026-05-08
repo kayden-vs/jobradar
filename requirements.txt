@@ -1,0 +1,10 @@
+scrapling[fetchers]
+requests
+feedparser
+google-generativeai
+python-telegram-bot==20.7
+pyyaml
+python-dotenv
+schedule
+httpx
+aiohttp
