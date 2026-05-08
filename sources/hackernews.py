@@ -1,12 +1,31 @@
 import requests
 import logging
-import google.generativeai as genai
 import json
 import os
+import time
 from datetime import datetime
+from groq import Groq
 
 logger = logging.getLogger(__name__)
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+
+GROQ_MODEL   = "llama-3.3-70b-versatile"
+REQ_INTERVAL = 3.0  # seconds between Groq calls (stay under 30 req/min)
+_last_call   = 0.0
+
+
+def _groq_client() -> Groq:
+    api_key = os.getenv("GROQ_API_KEY")
+    if not api_key:
+        raise RuntimeError("GROQ_API_KEY is not set in .env")
+    return Groq(api_key=api_key)
+
+
+def _throttle():
+    global _last_call
+    elapsed = time.time() - _last_call
+    if elapsed < REQ_INTERVAL:
+        time.sleep(REQ_INTERVAL - elapsed)
+    _last_call = time.time()
 
 # HN "Who is Hiring" thread IDs — update monthly
 # Find it at: news.ycombinator.com/submitted?id=whoishiring
@@ -85,52 +104,72 @@ def fetch_hn_comments(thread_id: int) -> list[str]:
 
 def parse_comments_with_ai(comments: list[str]) -> list[dict]:
     """
-    Send batches of HN comments to Gemini to extract structured job data.
+    Send batches of HN comments to Groq (llama-3.3-70b-versatile) to extract
+    structured job data. Batches of 10 to manage token budget.
+    Throttled at 1 req per 3 sec to stay under 30 req/min.
     """
-    model = genai.GenerativeModel("gemini-2.0-flash")
+    client = _groq_client()
     all_jobs = []
-    
-    # Process in batches of 20 comments to fit context window
-    batch_size = 20
+
+    batch_size = 10  # Smaller batches: ~2-3k tokens each, safe for 12k token/min limit
     for i in range(0, len(comments), batch_size):
-        batch = comments[i:i+batch_size]
+        batch    = comments[i:i + batch_size]
         combined = "\n\n---\n\n".join(batch)
-        
-        prompt = f"""You are extracting job postings from HackerNews "Who Is Hiring" thread comments.
-Each comment may contain zero or more job opportunities.
 
-Extract ALL job opportunities from these comments. For each job, return a JSON array of objects with these exact fields:
+        _throttle()
+
+        prompt = f"""Extract ALL job opportunities from these HackerNews 'Who is Hiring' comments.
+Each comment is separated by ---.
+Return ONLY a JSON array. If no jobs are found in any comment, return an empty array [].
+No markdown, no explanation, just the JSON.
+
+For each job extract:
 - title: job title
-- company: company name (look for "| CompanyName |" pattern in HN posts)
-- location: location or "Remote" if remote-friendly
-- description: full job description text
-- url: application URL or email if mentioned
-- salary: salary/stipend if mentioned, else ""
-- requires_experience: estimated years of experience required as a number (0 if internship/fresher)
-- tech_stack: comma-separated list of mentioned technologies
-
-Return ONLY a JSON array. No markdown, no explanation.
+- company: company name
+- location: location or "Remote"
+- description: full job text
+- url: application URL or email if mentioned, else ""
+- salary: if mentioned, else ""
+- requires_experience: years required as number (0 if intern/fresher)
+- tech_stack: comma-separated technologies
 
 Comments:
-{combined}"""
-        
+{combined[:4000]}"""
+
         try:
-            response = model.generate_content(prompt)
-            text = response.text.strip()
-            # Clean up if model wrapped in markdown
+            response = client.chat.completions.create(
+                model=GROQ_MODEL,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You extract job postings from text. Always respond with a valid JSON array only.",
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0.1,
+                max_tokens=2048,
+            )
+
+            text = response.choices[0].message.content.strip()
+
+            # Strip markdown fences if model ignores instructions
             if text.startswith("```"):
                 text = text.split("```")[1]
                 if text.startswith("json"):
-                    text = text[4:]
-            
+                    text = text[4:].strip()
+
             jobs = json.loads(text)
+            if not isinstance(jobs, list):
+                jobs = []
+
             for job in jobs:
-                job["source"] = "hackernews"
+                job["source"]    = "hackernews"
                 job["posted_at"] = datetime.now().isoformat()
             all_jobs.extend(jobs)
+
         except Exception as e:
             logger.warning(f"HN AI parsing batch {i} failed: {e}")
-    
+
     return all_jobs
 
 

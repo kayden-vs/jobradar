@@ -1,12 +1,37 @@
 import os
 import json
+import time
 import yaml
 import logging
-import google.generativeai as genai
+from groq import Groq
 from storage.db import save_job
 
 logger = logging.getLogger(__name__)
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+
+# ─────────────────────────────────────────────────────────────────
+# Groq client — llama-3.3-70b-versatile
+# Rate limits (free tier): 30 req/min, 1,000 req/day, 100k tokens/day
+# We throttle to 1 req per 3 seconds to stay well under 30 req/min
+# ─────────────────────────────────────────────────────────────────
+MODEL         = "llama-3.3-70b-versatile"
+REQ_INTERVAL  = 3.0        # seconds between scoring calls
+_last_call_ts = 0.0        # module-level timestamp tracker
+
+
+def _groq_client() -> Groq:
+    api_key = os.getenv("GROQ_API_KEY")
+    if not api_key:
+        raise RuntimeError("GROQ_API_KEY is not set in .env")
+    return Groq(api_key=api_key)
+
+
+def _throttle():
+    """Sleep enough to keep under 30 req/min (1 req per 3 sec)."""
+    global _last_call_ts
+    elapsed = time.time() - _last_call_ts
+    if elapsed < REQ_INTERVAL:
+        time.sleep(REQ_INTERVAL - elapsed)
+    _last_call_ts = time.time()
 
 
 def load_profile(path="profile.yaml") -> dict:
@@ -16,15 +41,15 @@ def load_profile(path="profile.yaml") -> dict:
 
 def build_scoring_prompt(job: dict, profile: dict) -> str:
     candidate = profile["candidate"]
-    
-    return f"""You are a job relevance scorer for a specific candidate. Your job is to score how relevant a job posting is for this person.
+
+    return f"""You are a job relevance scorer for a specific candidate. Score how relevant a job posting is for this person.
 
 ## CANDIDATE PROFILE
 
 Name: {candidate['name']}
 Current level: Fresher / 0 years experience
 
-Target roles (in priority order):
+Target roles (priority order):
 {chr(10).join('- ' + r for r in candidate['roles']['primary'])}
 Also acceptable: {', '.join(candidate['roles']['secondary'])}
 
@@ -33,19 +58,16 @@ Tech stack:
 - Learning: {', '.join(candidate['skills']['learning'])}
 
 Key project: {candidate['projects'][0]['name']}
-Project description: {candidate['projects'][0]['description']}
-Project relevance signal: {candidate['projects'][0]['relevance_signal']}
+Description: {candidate['projects'][0]['description']}
+Relevance signal: {candidate['projects'][0]['relevance_signal']}
 
 Location: {candidate['location']['base']}
 Acceptable locations: {', '.join(candidate['location']['acceptable'])}
 
-High-priority industries (give bonus):
-{', '.join(candidate['industries']['high_priority'])}
+High-priority industries (bonus): {', '.join(candidate['industries']['high_priority'])}
+Medium-priority industries: {', '.join(candidate['industries']['medium_priority'])}
 
-Medium-priority industries:
-{', '.join(candidate['industries']['medium_priority'])}
-
-## JOB POSTING TO SCORE
+## JOB POSTING
 
 Title: {job.get('title', 'N/A')}
 Company: {job.get('company', 'N/A')}
@@ -54,30 +76,30 @@ Salary/Stipend: {job.get('salary', 'Not mentioned')}
 Source: {job.get('source', 'N/A')}
 
 Job Description:
-{job.get('description', 'No description available')[:4000]}
+{job.get('description', 'No description available')[:3000]}
 
-## SCORING INSTRUCTIONS
+## SCORING RULES
 
-Score from 1 to 10 where:
-- 10 = Perfect match (Golang + fintech/crypto + intern/fresher + remote/India, crypto exchange project directly relevant)
-- 8-9 = Very strong match (backend intern, uses Go or compatible stack)  
-- 6-7 = Good match (backend adjacent, could be relevant)
-- 4-5 = Weak match (tangentially related)
-- 1-3 = Not relevant (wrong role, wrong stack, unclear)
+Score 1-10:
+- 10 = Perfect (Go + fintech/crypto + intern/fresher + India/remote)
+- 8-9 = Very strong (backend intern, Go or close stack)
+- 6-7 = Good (backend adjacent, potentially relevant)
+- 4-5 = Weak (tangentially related)
+- 1-3 = Not relevant
 
-IMPORTANT rules:
-- If the role requires more than 1 year of experience: score MUST be 0-2 max (pre-filter should have caught this but double-check)
-- If the company is in fintech/crypto/payments AND uses Go: add +2 to base score
-- If location is outside India AND in-office: score MUST be 1
-- If the candidate's crypto exchange project is directly relevant to this company (fintech, crypto, trading, payments): add +2 to base score
-- If Golang/Go is mentioned in requirements or stack: add +2 to base score
+Mandatory rules:
+- Requires >1 year exp: score 0-2 (pre-filter miss)
+- Go/Golang mentioned: +2 to base score
+- Fintech/crypto/payments company using Go: +2 to base score
+- Crypto exchange project relevant: +2 to base score
+- Location outside India AND in-office only: score = 1
 
-Return ONLY a valid JSON object with these exact keys:
+Return ONLY a valid JSON object, no markdown fences:
 {{
   "score": <integer 1-10>,
-  "reason": "<2-3 sentence explanation of the score>",
-  "highlights": ["<key reason 1>", "<key reason 2>", "<key reason 3>"],
-  "red_flags": ["<issue 1 if any>"],
+  "reason": "<2-3 sentence explanation>",
+  "highlights": ["<reason 1>", "<reason 2>", "<reason 3>"],
+  "red_flags": ["<issue if any>"],
   "golang_match": <true/false>,
   "fintech_match": <true/false>,
   "apply_urgency": "<high/medium/low>",
@@ -86,35 +108,53 @@ Return ONLY a valid JSON object with these exact keys:
 
 
 def score_job(job: dict, profile: dict) -> dict:
-    """Score a single job with Gemini. Returns job dict with score fields added."""
-    model = genai.GenerativeModel("gemini-3.0-flash")
-    
+    """Score a single job with Groq llama-3.3-70b-versatile."""
+    _throttle()  # Respect rate limit before every call
+
+    client = _groq_client()
+
     try:
         prompt = build_scoring_prompt(job, profile)
-        response = model.generate_content(prompt)
-        text = response.text.strip()
-        
-        # Clean markdown code fences if model adds them
-        if "```" in text:
+
+        response = client.chat.completions.create(
+            model=MODEL,
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are a precise job relevance scorer. Always respond with valid JSON only, no markdown.",
+                },
+                {
+                    "role": "user",
+                    "content": prompt,
+                },
+            ],
+            temperature=0.1,   # Low temperature for consistent scoring
+            max_tokens=512,
+        )
+
+        text = response.choices[0].message.content.strip()
+
+        # Strip markdown code fences if model adds them despite instructions
+        if text.startswith("```"):
             text = text.split("```")[1]
             if text.startswith("json"):
                 text = text[4:].strip()
-        
+
         result = json.loads(text)
-        
-        job["score"]       = result.get("score", 0)
-        job["reason"]      = result.get("reason", "")
-        job["highlights"]  = ", ".join(result.get("highlights", []))
-        job["red_flags"]   = ", ".join(result.get("red_flags", []))
-        job["urgency"]     = result.get("apply_urgency", "low")
-        
-        logger.info(f"Scored: {job['title']} @ {job['company']} → {job['score']}/10")
+
+        job["score"]      = int(result.get("score", 0))
+        job["reason"]     = result.get("reason", "")
+        job["highlights"] = ", ".join(result.get("highlights", []))
+        job["red_flags"]  = ", ".join(result.get("red_flags", []))
+        job["urgency"]    = result.get("apply_urgency", "low")
+
+        logger.info(f"Scored: {job['title']} @ {job['company']} -> {job['score']}/10 [{job['urgency']}]")
         return job
-        
+
     except Exception as e:
-        logger.error(f"Gemini scoring failed for {job.get('title', '?')}: {e}")
-        job["score"]    = -1  # Flag as unscored
-        job["reason"]   = f"Scoring error: {e}"
+        logger.error(f"Groq scoring failed for {job.get('title', '?')}: {e}")
+        job["score"]      = -1
+        job["reason"]     = f"Scoring error: {e}"
         job["highlights"] = ""
         job["red_flags"]  = ""
         job["urgency"]    = "low"
@@ -123,18 +163,23 @@ def score_job(job: dict, profile: dict) -> dict:
 
 def score_all(jobs: list[dict]) -> tuple[list[dict], list[dict], list[dict]]:
     """
-    Score all jobs and split into buckets.
-    Returns: (urgent_jobs, digest_jobs, low_jobs)
+    Score all eligible jobs and split into buckets.
+    Throttled to 1 req per 3 sec to stay under Groq's 30 req/min limit.
+    Daily budget: 1,000 req/day. With ~100 eligible jobs/run that's 10 runs/day
+    before hitting the daily limit — plenty for once-daily execution.
+
+    Returns: (urgent_jobs [8-10], digest_jobs [6-7], low_jobs [<6])
     """
     profile = load_profile()
-    urgent  = []  # score 8-10
-    digest  = []  # score 6-7
-    low     = []  # score < 6
-    
+    urgent  = []
+    digest  = []
+    low     = []
+
+    logger.info(f"Scoring {len(jobs)} eligible jobs with Groq ({MODEL})")
+
     for job in jobs:
         scored_job = score_job(job, profile)
-        
-        # Save to DB regardless of score
+
         save_job(
             scored_job,
             score      = scored_job["score"],
@@ -142,13 +187,13 @@ def score_all(jobs: list[dict]) -> tuple[list[dict], list[dict], list[dict]]:
             highlights = scored_job.get("highlights", ""),
             red_flags  = scored_job.get("red_flags", ""),
         )
-        
+
         if scored_job["score"] >= 8:
             urgent.append(scored_job)
         elif scored_job["score"] >= 6:
             digest.append(scored_job)
         else:
             low.append(scored_job)
-    
+
     logger.info(f"Scoring complete: {len(urgent)} urgent, {len(digest)} digest, {len(low)} low")
     return urgent, digest, low
