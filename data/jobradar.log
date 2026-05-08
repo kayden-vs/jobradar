@@ -1,0 +1,85 @@
+2026-05-08 19:57:46,281 [INFO] jobradar: ==================================================
+2026-05-08 19:57:46,281 [INFO] jobradar: JobRadar pipeline starting
+2026-05-08 19:57:46,281 [INFO] jobradar: ==================================================
+2026-05-08 19:57:46,300 [INFO] jobradar: --- Fetching ATS endpoints ---
+2026-05-08 19:57:46,872 [WARNING] sources.ats: Greenhouse fetch failed for razorpay: 404 Client Error: Not Found for url: https://boards.greenhouse.io/v1/boards/razorpay/jobs
+2026-05-08 19:57:46,874 [INFO] sources.ats: Greenhouse razorpay: 0 jobs
+2026-05-08 19:57:47,481 [WARNING] sources.ats: Greenhouse fetch failed for browserstack: 404 Client Error: Not Found for url: https://boards.greenhouse.io/v1/boards/browserstack/jobs
+2026-05-08 19:57:47,483 [INFO] sources.ats: Greenhouse browserstack: 0 jobs
+2026-05-08 19:57:47,999 [WARNING] sources.ats: Greenhouse fetch failed for innovaccer: 404 Client Error: Not Found for url: https://boards.greenhouse.io/v1/boards/innovaccer/jobs
+2026-05-08 19:57:48,001 [INFO] sources.ats: Greenhouse innovaccer: 0 jobs
+2026-05-08 19:57:48,612 [WARNING] sources.ats: Greenhouse fetch failed for unacademy: 404 Client Error: Not Found for url: https://boards.greenhouse.io/v1/boards/unacademy/jobs
+2026-05-08 19:57:48,613 [INFO] sources.ats: Greenhouse unacademy: 0 jobs
+2026-05-08 19:57:48,982 [WARNING] sources.ats: Greenhouse fetch failed for mpl-gaming: 404 Client Error: Not Found for url: https://boards.greenhouse.io/v1/boards/mpl-gaming/jobs
+2026-05-08 19:57:48,983 [INFO] sources.ats: Greenhouse mpl-gaming: 0 jobs
+2026-05-08 19:57:49,537 [INFO] sources.ats: Greenhouse groww: 15 jobs
+2026-05-08 19:57:49,893 [WARNING] sources.ats: Greenhouse fetch failed for zepto: 404 Client Error: Not Found for url: https://boards.greenhouse.io/v1/boards/zepto/jobs
+2026-05-08 19:57:49,895 [INFO] sources.ats: Greenhouse zepto: 0 jobs
+2026-05-08 19:57:50,320 [WARNING] sources.ats: Greenhouse fetch failed for cred: 404 Client Error: Not Found for url: https://boards.greenhouse.io/v1/boards/cred/jobs
+2026-05-08 19:57:50,322 [INFO] sources.ats: Greenhouse cred: 0 jobs
+2026-05-08 19:57:50,689 [WARNING] sources.ats: Greenhouse fetch failed for slice-card: 404 Client Error: Not Found for url: https://boards.greenhouse.io/v1/boards/slice-card/jobs
+2026-05-08 19:57:50,690 [INFO] sources.ats: Greenhouse slice-card: 0 jobs
+2026-05-08 19:57:51,125 [WARNING] sources.ats: Greenhouse fetch failed for open-financial-technologies: 404 Client Error: Not Found for url: https://boards.greenhouse.io/v1/boards/open-financial-technologies/jobs
+2026-05-08 19:57:51,126 [INFO] sources.ats: Greenhouse open-financial-technologies: 0 jobs
+2026-05-08 19:57:51,681 [WARNING] sources.ats: Greenhouse fetch failed for smallcase: 404 Client Error: Not Found for url: https://boards.greenhouse.io/v1/boards/smallcase/jobs
+2026-05-08 19:57:51,682 [INFO] sources.ats: Greenhouse smallcase: 0 jobs
+2026-05-08 19:57:52,063 [WARNING] sources.ats: Greenhouse fetch failed for niyo: 404 Client Error: Not Found for url: https://boards.greenhouse.io/v1/boards/niyo/jobs
+2026-05-08 19:57:52,065 [INFO] sources.ats: Greenhouse niyo: 0 jobs
+2026-05-08 19:57:52,605 [WARNING] sources.ats: Greenhouse fetch failed for fi-money: 404 Client Error: Not Found for url: https://boards.greenhouse.io/v1/boards/fi-money/jobs
+2026-05-08 19:57:52,606 [INFO] sources.ats: Greenhouse fi-money: 0 jobs
+2026-05-08 19:57:53,118 [WARNING] sources.ats: Greenhouse fetch failed for jupiter-money: 404 Client Error: Not Found for url: https://boards.greenhouse.io/v1/boards/jupiter-money/jobs
+2026-05-08 19:57:53,119 [INFO] sources.ats: Greenhouse jupiter-money: 0 jobs
+2026-05-08 19:57:53,519 [WARNING] sources.ats: Greenhouse fetch failed for kreditbee: 404 Client Error: Not Found for url: https://boards.greenhouse.io/v1/boards/kreditbee/jobs
+2026-05-08 19:57:53,520 [INFO] sources.ats: Greenhouse kreditbee: 0 jobs
+2026-05-08 19:57:57,023 [INFO] sources.ats: Lever meesho: 53 jobs
+2026-05-08 19:57:59,664 [WARNING] sources.ats: Lever fetch failed for swiggy: 404 Client Error: Not Found for url: https://api.lever.co/v0/postings/swiggy
+2026-05-08 19:57:59,665 [INFO] sources.ats: Lever swiggy: 0 jobs
+2026-05-08 19:58:01,002 [WARNING] sources.ats: Lever fetch failed for zomato: 404 Client Error: Not Found for url: https://api.lever.co/v0/postings/zomato
+2026-05-08 19:58:01,003 [INFO] sources.ats: Lever zomato: 0 jobs
+2026-05-08 19:58:02,239 [WARNING] sources.ats: Lever fetch failed for urban-company: 404 Client Error: Not Found for url: https://api.lever.co/v0/postings/urban-company
+2026-05-08 19:58:02,241 [INFO] sources.ats: Lever urban-company: 0 jobs
+2026-05-08 19:58:03,908 [WARNING] sources.ats: Lever fetch failed for ola: 404 Client Error: Not Found for url: https://api.lever.co/v0/postings/ola
+2026-05-08 19:58:03,910 [INFO] sources.ats: Lever ola: 0 jobs
+2026-05-08 19:58:05,200 [WARNING] sources.ats: Lever fetch failed for navi-technologies: 404 Client Error: Not Found for url: https://api.lever.co/v0/postings/navi-technologies
+2026-05-08 19:58:05,201 [INFO] sources.ats: Lever navi-technologies: 0 jobs
+2026-05-08 19:58:06,719 [WARNING] sources.ats: Lever fetch failed for lendingkart: 404 Client Error: Not Found for url: https://api.lever.co/v0/postings/lendingkart
+2026-05-08 19:58:06,720 [INFO] sources.ats: Lever lendingkart: 0 jobs
+2026-05-08 19:58:07,948 [WARNING] sources.ats: Lever fetch failed for indmoney: 404 Client Error: Not Found for url: https://api.lever.co/v0/postings/indmoney
+2026-05-08 19:58:07,950 [INFO] sources.ats: Lever indmoney: 0 jobs
+2026-05-08 19:58:09,419 [WARNING] sources.ats: Lever fetch failed for cube-wealth: 404 Client Error: Not Found for url: https://api.lever.co/v0/postings/cube-wealth
+2026-05-08 19:58:09,420 [INFO] sources.ats: Lever cube-wealth: 0 jobs
+2026-05-08 19:58:10,988 [WARNING] sources.ats: Lever fetch failed for recur-club: 404 Client Error: Not Found for url: https://api.lever.co/v0/postings/recur-club
+2026-05-08 19:58:10,990 [INFO] sources.ats: Lever recur-club: 0 jobs
+2026-05-08 19:58:11,163 [WARNING] sources.ats: Ashby fetch failed for setu: HTTPSConnectionPool(host='setu.jobs.ashbyhq.com', port=443): Max retries exceeded with url: /api/jobs (Caused by NameResolutionError("HTTPSConnection(host='setu.jobs.ashbyhq.com', port=443): Failed to resolve 'setu.jobs.ashbyhq.com' ([Errno -5] No address associated with hostname)"))
+2026-05-08 19:58:11,164 [INFO] sources.ats: Ashby setu: 0 jobs
+2026-05-08 19:58:11,207 [WARNING] sources.ats: Ashby fetch failed for decentro: HTTPSConnectionPool(host='decentro.jobs.ashbyhq.com', port=443): Max retries exceeded with url: /api/jobs (Caused by NameResolutionError("HTTPSConnection(host='decentro.jobs.ashbyhq.com', port=443): Failed to resolve 'decentro.jobs.ashbyhq.com' ([Errno -5] No address associated with hostname)"))
+2026-05-08 19:58:11,207 [INFO] sources.ats: Ashby decentro: 0 jobs
+2026-05-08 19:58:11,856 [WARNING] sources.ats: Ashby fetch failed for cashfree-payments: HTTPSConnectionPool(host='cashfree-payments.jobs.ashbyhq.com', port=443): Max retries exceeded with url: /api/jobs (Caused by NameResolutionError("HTTPSConnection(host='cashfree-payments.jobs.ashbyhq.com', port=443): Failed to resolve 'cashfree-payments.jobs.ashbyhq.com' ([Errno -5] No address associated with hostname)"))
+2026-05-08 19:58:11,856 [INFO] sources.ats: Ashby cashfree-payments: 0 jobs
+2026-05-08 19:58:12,679 [INFO] sources.ats: Workable juspay: 0 jobs
+2026-05-08 19:58:13,495 [WARNING] sources.ats: Workable fetch failed for sarvam-ai: 404 Client Error: Not Found for url: https://apply.workable.com/api/v3/accounts/sarvam-ai/jobs
+2026-05-08 19:58:13,496 [INFO] sources.ats: Workable sarvam-ai: 0 jobs
+2026-05-08 19:58:13,496 [INFO] sources.ats: ATS total: 68 raw jobs
+2026-05-08 19:58:13,497 [INFO] jobradar: --- Fetching Cutshort ---
+2026-05-08 19:58:13,497 [WARNING] scrapling: This logic is deprecated now, and have no effect; It will be removed with v0.3. Use `StealthyFetcher.configure()` instead before fetching
+2026-05-08 19:58:17,672 [INFO] scrapling: Fetched (200) <GET https://cutshort.io/jobs?q=golang+backend+intern&remote=true> (referer: https://www.google.com/)
+2026-05-08 19:58:21,132 [INFO] scrapling: Fetched (200) <GET https://cutshort.io/jobs?q=backend+developer+intern&remote=true> (referer: https://www.google.com/)
+2026-05-08 19:58:24,453 [INFO] scrapling: Fetched (200) <GET https://cutshort.io/jobs?q=software+engineer+intern+golang&remote=true> (referer: https://www.google.com/)
+2026-05-08 19:58:28,725 [INFO] scrapling: Fetched (200) <GET https://cutshort.io/jobs?q=backend+engineer+fresher&remote=true> (referer: https://www.google.com/)
+2026-05-08 19:58:31,998 [INFO] scrapling: Fetched (200) <GET https://cutshort.io/jobs?q=go+developer+fresher+india&remote=true> (referer: https://www.google.com/)
+2026-05-08 19:58:35,217 [INFO] scrapling: Fetched (200) <GET https://cutshort.io/jobs?q=backend+intern+fintech&remote=true> (referer: https://www.google.com/)
+2026-05-08 19:58:38,796 [INFO] scrapling: Fetched (200) <GET https://cutshort.io/jobs?q=full+stack+intern+golang&remote=true> (referer: https://www.google.com/)
+2026-05-08 19:58:38,903 [INFO] sources.cutshort: Cutshort: 0 jobs found
+2026-05-08 19:58:38,903 [INFO] jobradar: --- Fetching Instahyre ---
+2026-05-08 19:58:39,354 [WARNING] sources.instahyre: Instahyre API fetch failed: 404 Client Error: Not Found for url: https://www.instahyre.com/api/v1/opportunity/?format=json&skills=golang%2Cgo%2Cbackend&experience=0%2C1&locations=work-from-home%2Cbangalore%2Cmumbai%2Chyderabad&limit=50&offset=0
+2026-05-08 19:58:39,354 [WARNING] scrapling: This logic is deprecated now, and have no effect; It will be removed with v0.3. Use `StealthyFetcher.configure()` instead before fetching
+2026-05-08 19:58:44,561 [INFO] scrapling: Fetched (301) <GET https://www.instahyre.com/jobs/?skills=golang&exp=0-1> (referer: https://www.google.com/)
+2026-05-08 19:58:44,598 [INFO] scrapling: Fetched (200) <GET https://www.instahyre.com/search-jobs> (referer: https://www.google.com/)
+2026-05-08 19:58:44,686 [INFO] jobradar: --- Fetching Wellfound ---
+2026-05-08 19:58:44,686 [WARNING] scrapling: This logic is deprecated now, and have no effect; It will be removed with v0.3. Use `DynamicFetcher.configure()` instead before fetching
+2026-05-08 19:59:11,436 [ERROR] asyncio: Task was destroyed but it is pending!
+task: <Task pending name='Task-209' coro=<Page.goto() done, defined at /home/rohit/Projects/jobradar/venv/lib/python3.14/site-packages/playwright/_impl/_page.py:545> wait_for=<Future pending cb=[Task.task_wakeup()]> cb=[SyncBase._sync.<locals>.<lambda>() at /home/rohit/Projects/jobradar/venv/lib/python3.14/site-packages/playwright/_impl/_sync_base.py:111, ProtocolCallback.__init__.<locals>.cb() at /home/rohit/Projects/jobradar/venv/lib/python3.14/site-packages/playwright/_impl/_connection.py:230]>
+2026-05-08 19:59:11,436 [ERROR] asyncio: Task was destroyed but it is pending!
+task: <Task pending name='Task-210' coro=<Page.close() running at /home/rohit/Projects/jobradar/venv/lib/python3.14/site-packages/playwright/_impl/_page.py:826> cb=[SyncBase._sync.<locals>.<lambda>() at /home/rohit/Projects/jobradar/venv/lib/python3.14/site-packages/playwright/_impl/_sync_base.py:111]>
+2026-05-08 19:59:11,436 [ERROR] asyncio: Task was destroyed but it is pending!
+task: <Task pending name='Task-211' coro=<BrowserContext.close() running at /home/rohit/Projects/jobradar/venv/lib/python3.14/site-packages/playwright/_impl/_browser_context.py:584> cb=[SyncBase._sync.<locals>.<lambda>() at /home/rohit/Projects/jobradar/venv/lib/python3.14/site-packages/playwright/_impl/_sync_base.py:111]>
