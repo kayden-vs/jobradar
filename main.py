@@ -21,7 +21,7 @@ logging.basicConfig(
     format  = "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     handlers=[
         stream_handler,
-        logging.FileHandler("data/jobradar.log", encoding="utf-8"),
+        logging.FileHandler("data/jobradar.log", mode="w", encoding="utf-8"),
     ]
 )
 logger = logging.getLogger("jobradar")
