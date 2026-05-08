@@ -94,12 +94,16 @@ Mandatory rules:
 - Crypto exchange project relevant: +2 to base score
 - Location outside India AND in-office only: score = 1
 
+TOKEN SAVING RULE — IMPORTANT:
+If score < 6: set reason="", highlights=[], red_flags=[] — do NOT write any text for these fields.
+If score >= 6: fill in reason, highlights, and red_flags normally.
+
 Return ONLY a valid JSON object, no markdown fences:
 {{
   "score": <integer 1-10>,
-  "reason": "<2-3 sentence explanation>",
-  "highlights": ["<reason 1>", "<reason 2>", "<reason 3>"],
-  "red_flags": ["<issue if any>"],
+  "reason": "<2-3 sentences IF score>=6, else empty string>",
+  "highlights": ["<reason 1>", "<reason 2>", "<reason 3> — IF score>=6, else []"],
+  "red_flags": ["<issue if any> — IF score>=6, else []"],
   "golang_match": <true/false>,
   "fintech_match": <true/false>,
   "apply_urgency": "<high/medium/low>",
