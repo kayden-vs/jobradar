@@ -146,7 +146,6 @@ def prefilter(jobs: list[dict], profile: dict) -> list[dict]:
     Goal: push <30 jobs/day to the AI scorer to stay within Groq's
     1,000 req/day and 100k token/day limits.
     """
-    from storage.db import save_job
 
     passed = []
 
@@ -170,7 +169,6 @@ def prefilter(jobs: list[dict], profile: dict) -> list[dict]:
         rejected = False
         for should_reject, reason in checks:
             if should_reject:
-                save_job(job, score=0, reason=f"Pre-filtered: {reason}")
                 logger.debug(f"REJECTED '{title}' @ '{company}': {reason}")
                 rejected = True
                 break

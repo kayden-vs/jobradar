@@ -186,13 +186,15 @@ def score_all(jobs: list[dict]) -> tuple[list[dict], list[dict], list[dict]]:
     for job in jobs:
         scored_job = score_job(job, profile)
 
-        save_job(
-            scored_job,
-            score      = scored_job["score"],
-            reason     = scored_job.get("reason", ""),
-            highlights = scored_job.get("highlights", ""),
-            red_flags  = scored_job.get("red_flags", ""),
-        )
+        # Only persist jobs worth reviewing — skip noise (score < 5 or API errors)
+        if scored_job["score"] >= 5:
+            save_job(
+                scored_job,
+                score      = scored_job["score"],
+                reason     = scored_job.get("reason", ""),
+                highlights = scored_job.get("highlights", ""),
+                red_flags  = scored_job.get("red_flags", ""),
+            )
 
         if scored_job["score"] >= 8:
             urgent.append(scored_job)
