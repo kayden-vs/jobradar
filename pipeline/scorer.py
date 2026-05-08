@@ -9,12 +9,14 @@ from storage.db import save_job
 logger = logging.getLogger(__name__)
 
 # ─────────────────────────────────────────────────────────────────
-# Groq client — llama-3.3-70b-versatile
-# Rate limits (free tier): 30 req/min, 1,000 req/day, 100k tokens/day
-# We throttle to 1 req per 3 seconds to stay well under 30 req/min
+# Groq model: llama-4-scout (best balance of quality + budget)
+# TPD: 500K (was 100K with llama-3.3-70b — we hit the limit in 1 run)
+# TPM: 30K (highest of all Groq free-tier models)
+# RPD: 1K  (sufficient for 1 scheduled run/day)
+# Quality: Llama 4 MoE architecture — better than 8B, close to 70B
 # ─────────────────────────────────────────────────────────────────
-MODEL         = "llama-3.3-70b-versatile"
-REQ_INTERVAL  = 3.0        # seconds between scoring calls
+MODEL        = "meta-llama/llama-4-scout-17b-16e-instruct"
+REQ_INTERVAL = 3.0        # seconds between scoring calls
 _last_call_ts = 0.0        # module-level timestamp tracker
 
 

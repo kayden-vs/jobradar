@@ -9,7 +9,9 @@ from groq import Groq
 
 logger = logging.getLogger(__name__)
 
-GROQ_MODEL   = "llama-3.3-70b-versatile"
+# llama-3.1-8b-instant: extraction task, doesn't need large model
+# 500K TPD + 14.4K RPD = effectively unlimited for HN batch parsing
+GROQ_MODEL   = "llama-3.1-8b-instant"
 REQ_INTERVAL = 3.0  # seconds between Groq calls (stay under 30 req/min)
 _last_call   = 0.0
 
