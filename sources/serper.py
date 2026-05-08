@@ -92,7 +92,8 @@ def extract_job_from_page(url: str, title_hint: str, company_hint: str) -> dict 
     try:
         # Try fast plain HTTP request first (Fetcher uses .get(), NOT .fetch())
         fetcher = Fetcher()
-        page = fetcher.get(url, timeout=15)
+        fetcher.configure(timeout=15)
+        page = fetcher.get(url)
 
         # Look for job-related content signals
         body_text = page.get_all_text(ignore_tags=["script", "style", "nav", "footer"])
@@ -100,8 +101,10 @@ def extract_job_from_page(url: str, title_hint: str, company_hint: str) -> dict 
             # Page might need JS rendering — retry with stealthy browser
             time.sleep(2)  # Extra delay before browser fetch
             fetcher2 = StealthyFetcher()
-            page = fetcher2.fetch(url, headless=True, network_idle=True)
+            fetcher2.configure(headless=True, network_idle=True)
+            page = fetcher2.fetch(url)
             body_text = page.get_all_text(ignore_tags=["script", "style", "nav", "footer"])
+
 
         # If it's a Google Form, extract the form title and description
         if "docs.google.com/forms" in url or "forms.gle" in url:

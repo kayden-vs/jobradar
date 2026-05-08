@@ -70,10 +70,9 @@ def _fetch_instahyre_scrapling() -> list[dict]:
     jobs = []
     try:
         fetcher = StealthyFetcher()
+        fetcher.configure(headless=True, network_idle=True)
         page = fetcher.fetch(
-            "https://www.instahyre.com/jobs/?skills=golang&exp=0-1",
-            headless=True,
-            network_idle=True
+            "https://www.instahyre.com/jobs/?skills=golang&exp=0-1"
         )
         cards = page.css(".job-card, .opportunity-card")
         for card in cards:

@@ -19,10 +19,11 @@ def fetch_wellfound() -> list[dict]:
     seen = set()
 
     fetcher = DynamicFetcher()
+    fetcher.configure(headless=True, network_idle=True)
 
     for url in SEARCH_URLS:
         try:
-            page = fetcher.fetch(url, headless=True, network_idle=True)
+            page = fetcher.fetch(url)
             
             # Wellfound job cards
             cards = page.css("[data-test='StartupResult'], .job-listing, [class*='JobResult']")
