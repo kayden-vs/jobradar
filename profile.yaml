@@ -6,7 +6,7 @@
 # ─────────────────────────────────────────────────────────────────
 sources:
   ats:        true   # Greenhouse / Lever / Ashby / Workable API polling (most reliable)
-  cutshort:   true   # Cutshort.io scraping
+  cutshort:   false   # Cutshort.io scraping
   instahyre:  true   # Instahyre API + scraping fallback
   wellfound:  false  # DISABLED — blocks requests / shows verification wall
   serper:     true   # Google search dork discovery via Serper.dev
