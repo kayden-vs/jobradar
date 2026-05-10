@@ -106,6 +106,8 @@ candidate:
 
 # Hard reject rules — checked BEFORE AI, saves tokens
 hard_reject:
+  max_job_age_days: 60              # Reject jobs posted more than 60 days (2 months) ago
+  
   experience_keywords:
     # If ANY of these appear in the job description → immediate reject
     - "2+ years"

@@ -3,6 +3,7 @@ import json
 import time
 import yaml
 import logging
+from datetime import datetime
 from groq import Groq
 from storage.db import save_job
 
@@ -43,8 +44,11 @@ def load_profile(path="profile.yaml") -> dict:
 
 def build_scoring_prompt(job: dict, profile: dict) -> str:
     candidate = profile["candidate"]
+    today = datetime.now().strftime("%B %d, %Y")
 
     return f"""You are a job relevance scorer for a specific candidate. Score how relevant a job posting is for this person.
+    
+Today's Date: {today}
 
 ## CANDIDATE PROFILE
 
@@ -91,6 +95,7 @@ Score 1-10:
 
 Mandatory rules:
 - Requires >1 year exp: score 0-2 (pre-filter miss)
+- If the description mentions an application deadline or 'apply by' date that has already passed relative to Today's Date ({today}), OR indicates the post is older than 2 months: score 1-3
 - Go/Golang mentioned: +2 to base score
 - Fintech/crypto/payments company using Go: +2 to base score
 - Crypto exchange project relevant: +2 to base score

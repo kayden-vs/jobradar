@@ -1,6 +1,8 @@
 import yaml
 import re
 import logging
+from datetime import datetime, timezone
+from dateutil import parser
 
 logger = logging.getLogger(__name__)
 
@@ -137,6 +139,31 @@ def check_no_description(job: dict) -> tuple[bool, str]:
     return False, ""
 
 
+def check_is_old_post(job: dict, profile: dict) -> tuple[bool, str]:
+    """
+    NEW: Reject jobs that are older than the max_job_age_days threshold.
+    """
+    max_days = profile.get("hard_reject", {}).get("max_job_age_days", 60)
+    posted_at = job.get("posted_at")
+    if not posted_at:
+        return False, ""
+    
+    try:
+        dt = parser.parse(posted_at)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        
+        now = datetime.now(timezone.utc)
+        age = (now - dt).days
+        
+        if age > max_days:
+            return True, f"Job posted {age} days ago (max {max_days})"
+    except Exception as e:
+        logger.debug(f"Failed to parse date '{posted_at}': {e}")
+    
+    return False, ""
+
+
 # ─────────────────────────────────────────────────────────────────
 # MAIN PRE-FILTER
 # ─────────────────────────────────────────────────────────────────
@@ -162,6 +189,7 @@ def prefilter(jobs: list[dict], profile: dict) -> list[dict]:
             check_has_meaningful_title(job),           # NEW: no title = skip
             check_no_description(job),                 # NEW: no text = skip
             check_candidate_post(job),                 # Not a job posting
+            check_is_old_post(job, profile),           # NEW: old post
             check_company_blacklist(company, profile), # Blacklisted company
             check_role_blacklist(title, profile),      # Blacklisted role type
             check_title_relevance(title),              # NEW: obvious non-tech role
