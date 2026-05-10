@@ -9,10 +9,9 @@ from groq import Groq
 
 logger = logging.getLogger(__name__)
 
-# llama-3.1-8b-instant: extraction task, doesn't need large model
-# 500K TPD + 14.4K RPD = effectively unlimited for HN batch parsing
-GROQ_MODEL   = "llama-3.1-8b-instant"
-REQ_INTERVAL = 3.0  # seconds between Groq calls (stay under 30 req/min)
+# Using the same high-TPM model as scorer.py to avoid rate limits
+GROQ_MODEL   = "meta-llama/llama-4-scout-17b-16e-instruct"
+REQ_INTERVAL = 5.0  # Increased to 5s to avoid Groq 429 (TPM limits)
 _last_call   = 0.0
 
 
@@ -151,7 +150,9 @@ def parse_comments_with_ai(comments: list[str]) -> list[dict]:
     client = _groq_client()
     all_jobs = []
 
-    batch_size = 10  # Smaller batches: ~2-3k tokens each, safe for 12k token/min limit
+    # Smaller batch size to prevent JSON truncation (Unterminated string errors)
+    # and to reduce tokens per request, preventing 429 TPM rate limits.
+    batch_size = 5
     for i in range(0, len(comments), batch_size):
         batch    = comments[i:i + batch_size]
         combined = "\n\n---\n\n".join(batch)
