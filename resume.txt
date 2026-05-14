@@ -1,0 +1,35 @@
+Rohit Kumar Roy
+ +91 8653124170 | # connect.rohitroy@gmail.com | ï LinkedIn | § Github
+Education
+Techno Main Salt Lake Kolkata, WB
+Bachelor of Technology in Computer Science and Engineering (IoT) Aug. 2023 – May 2027
+Technical Skills
+Languages: Go,TypeScript, Python
+Backend & Systems: gRPC, Protobuf, REST APIs, Microservices, Concurrency (goroutines, channels), System Design
+Databases & Storage: PostgreSQL, Redis, MySQL
+DevOps & Infrastructure: Docker, CI/CD (GitHub Actions)
+Observability & Testing: Prometheus, Unit & Integration Testing, Benchmarking
+Tools & Systems: Linux, Git
+Projects
+Zaraba § GitHub  Live | Go, gRPC, Protobuf, Templ Jan 2026 – Mar 2026
+Crypto exchange application with real-time trading, order matching, and wallet systems
+• Built a real-time trading system that matches buy and sell orders and maintains an in-memory orderbook.
+• Designed a gRPC-based architecture separating API, trading logic, and services for markets, trades, and wallets.
+• Used fixed-point arithmetic for precise financial calculations, eliminating floating-point inaccuracies in trade
+execution.
+CipherBin § GitHub  Live | Go, PostgreSQL, Templ, Chi Sept 2025
+Ephemeral code-sharing service where snippets auto-expire after a set time
+• Developed a full-stack Go application using the Templ engine for type-safe, server-side rendered HTML and a
+modular PostgreSQL backend engineered with a Clean Architecture pattern.
+• Implemented session-based authentication, input sanitization, and secure database operations using prepared
+statements.
+Sentinel-Proxy § GitHub | Go, gRPC (streaming), Redis Mar 2026
+Reverse proxy that monitors outgoing traffic to detect suspicious data transfer in real time
+• Built a streaming pipeline that inspects traffic chunks and tracks behavior patterns using Redis to identify potential
+data exfiltration.
+• Implemented adaptive threshold-based detection to flag abnormal data transfer while minimizing false positives.
+Achievements
+Finalist — DoubleSlash 4.0, Jadavpur University Mar 2026
+• Finalist in the Cybersecurity track; built Sentinel-Proxy, a real-time traffic monitoring system.
+Competitive Programming
+• LeetCode: 170+ problems solved with a 60-day consistent solving streak.
