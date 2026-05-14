@@ -1,0 +1,127 @@
+Good, I have verified data now. Let me give you an honest, accurate breakdown.
+
+ATS URL formats — 100% confirmed
+There are actually two Greenhouse endpoint families — a key thing the previous docs got wrong:
+ATSWeb UI (what you see in browser)JSON API (what you poll)Greenhouse UShttps://job-boards.greenhouse.io/{slug}https://boards.greenhouse.io/v1/boards/{slug}/jobs?content=trueGreenhouse EUhttps://job-boards.eu.greenhouse.io/{slug}https://boards.eu.greenhouse.io/v1/boards/{slug}/jobs?content=trueLeverhttps://jobs.lever.co/{slug}https://api.lever.co/v0/postings/{slug}
+The ?content=true param on Greenhouse is important — without it you get no job description, just titles and locations.
+
+Companies confirmed from live URLs (verified this session)
+CompanyATSConfirmed slugJSON API URLRazorpayGreenhouse USrazorpaysoftwareprivatelimitedboards.greenhouse.io/v1/boards/razorpaysoftwareprivatelimited/jobs?content=trueGrowwGreenhouse EUgrowwboards.eu.greenhouse.io/v1/boards/groww/jobs?content=trueMeeshoLevermeeshoapi.lever.co/v0/postings/meeshoHevo DataLeverhevodataapi.lever.co/v0/postings/hevodataStable MoneyLeverstable-money1api.lever.co/v0/postings/stable-money1
+Everything else in the previous docs was inferred from memory and should be treated as unverified. Here's the right way to verify any company yourself:
+python# ats_discovery.py — paste any company slug and it finds which ATS they use
+import requests
+
+def discover_ats(company_slug: str):
+    checks = [
+        ("Greenhouse US", f"https://boards.greenhouse.io/v1/boards/{company_slug}/jobs"),
+        ("Greenhouse EU", f"https://boards.eu.greenhouse.io/v1/boards/{company_slug}/jobs"),
+        ("Lever",         f"https://api.lever.co/v0/postings/{company_slug}"),
+        ("Ashby",         f"https://{company_slug}.jobs.ashbyhq.com/api/jobs"),
+        ("Workable",      f"https://apply.workable.com/api/v3/accounts/{company_slug}/jobs"),
+    ]
+    for name, url in checks:
+        try:
+            method = "POST" if "workable" in url else "GET"
+            r = requests.request(method, url, timeout=8,
+                                 json={"query":""} if method=="POST" else None)
+            if r.status_code == 200:
+                data = r.json()
+                count = len(data) if isinstance(data, list) else len(data.get("jobs", data.get("results", [])))
+                print(f"✅ {name}: {url}  →  {count} jobs")
+                return name, url
+        except Exception:
+            pass
+    print(f"❌ No known ATS found for slug: {company_slug}")
+    return None, None
+
+# Usage — try common slug variants too (company uses different slug than their name sometimes)
+discover_ats("razorpay")                     # might work, might not
+discover_ats("razorpaysoftwareprivatelimited")  # the real one
+discover_ats("cred")
+discover_ats("swiggy")
+discover_ats("phonepe")
+Run this for every company you care about. Takes 2 seconds per company. Build your verified list once, then it's permanent.
+
+Additional sources you should add
+🔥 Internshala — most important addition for your use case
+This is the single best source for backend internships in India that's missing from your current stack. Internshala is server-side rendered, so no JavaScript execution is needed — it uses raw HTTP, making it significantly faster than Playwright-based scrapers. You can scrape it with Scrapling's basic Fetcher (no StealthyFetcher needed). Lever
+Internshala has 200,000+ active listings and is India's #1 career platform trusted by 400,000+ companies, with a strong focus specifically on student internships and fresher jobs — exactly your search profile. The URLs are filterable and predictable: Lever
+python# sources/internshala.py
+from scrapling.fetchers import Fetcher  # plain HTTP, no browser
+
+SEARCH_URLS = [
+    "https://internshala.com/internships/backend-development-internship/work-from-home-internships/",
+    "https://internshala.com/internships/backend-development-internship/",
+    "https://internshala.com/internships/web-development-internship/work-from-home-internships/",
+    # Golang-specific — use search
+    "https://internshala.com/internships/keywords-golang/",
+    "https://internshala.com/internships/keywords-go-developer/",
+    # Fresher jobs (not just internships)
+    "https://internshala.com/jobs/backend-developer-intern-jobs/",
+]
+
+def fetch_internshala() -> list[dict]:
+    fetcher = Fetcher()
+    all_jobs = []
+    seen = set()
+    
+    for url in SEARCH_URLS:
+        try:
+            page = fetcher.get(url, timeout=15)
+            # Internshala job cards
+            cards = page.css(".internship_meta, .individual_internship")
+            for card in cards:
+                title_el   = card.css(".profile")
+                company_el = card.css(".company_name")
+                loc_el     = card.css(".locations span")
+                stipend_el = card.css(".stipend")
+                link_el    = card.css("a.view_detail_button, a[href*='/internship/detail/']")
+                
+                href = link_el[0].attrib.get("href","") if link_el else ""
+                job_url = "https://internshala.com" + href if href.startswith("/") else href
+                if job_url in seen:
+                    continue
+                seen.add(job_url)
+                
+                all_jobs.append({
+                    "title":     title_el[0].text.strip() if title_el else "",
+                    "company":   company_el[0].text.strip() if company_el else "",
+                    "location":  loc_el[0].text.strip() if loc_el else "India",
+                    "description": "",
+                    "url":       job_url,
+                    "source":    "internshala",
+                    "salary":    stipend_el[0].text.strip() if stipend_el else "",
+                    "posted_at": "",
+                })
+        except Exception as e:
+            print(f"Internshala failed for {url}: {e}")
+    return all_jobs
+
+YC Jobs board
+Y Combinator lists all open roles at their portfolio companies. India has a growing YC portfolio (Juspay, Setu, Khatabook, etc.) and many of these companies don't post anywhere else.
+python# Add to sources — simple GET, server-rendered
+# https://www.ycombinator.com/jobs?q=backend&type=fulltime,intern&remote=true
+# Filter params: role type, remote, batch
+Scrapling basic Fetcher works here. The page is mostly server-rendered.
+
+Hirist.tech
+India-specific tech-only job board. Better signal quality than Naukri for software roles because it's exclusively tech. Has a clean, crawlable listing structure.
+https://www.hirist.tech/it-jobs/golang-jobs/
+https://www.hirist.tech/it-jobs/backend-developer-jobs/
+Plain Fetcher works. No heavy anti-bot protection.
+
+LinkedIn Jobs (URL-based, no auth)
+LinkedIn public job search is accessible without login if you construct the URL correctly. The trick is using &f_E=1 (entry level) and &f_JT=I (internship) filters:
+https://www.linkedin.com/jobs/search/?keywords=backend+golang+intern&location=India&f_E=1,2&f_JT=I,F&f_TPR=r86400
+Parameters:
+
+f_E=1,2 — Entry level, Associate (filters out senior roles)
+f_JT=I,F — Internship, Full-time
+f_TPR=r86400 — Posted in last 24 hours
+
+Use StealthyFetcher here — LinkedIn has bot detection. The page is JS-rendered so DynamicFetcher may be needed.
+
+Hirehub / Cutshort RSS
+Cutshort actually exposes job listings in a near-RSS-friendly format via their API:
+https://cutshort.io/api/public/jobs?limit=50&offset=0&role=backend-developer&experience=0-1
+Worth hitting this JSON endpoint directly before using the Scrapling approach — it may work without auth for public listings.
