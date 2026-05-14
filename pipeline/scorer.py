@@ -46,14 +46,20 @@ def build_scoring_prompt(job: dict, profile: dict) -> str:
     candidate = profile["candidate"]
     today = datetime.now().strftime("%B %d, %Y")
 
+    # Build project context string from all projects in profile
+    projects_text = "\n".join(
+        f"- {p['name']}: {p['description']} | Signals: {p['relevance_signal']}"
+        for p in candidate.get('projects', [])
+    )
+
     return f"""You are a job relevance scorer for a specific candidate. Score how relevant a job posting is for this person.
-    
+
 Today's Date: {today}
 
 ## CANDIDATE PROFILE
 
 Name: {candidate['name']}
-Current level: Fresher / 0 years experience
+Current level: Fresher / 0 years experience (B.Tech student, graduating May 2027)
 
 Target roles (priority order):
 {chr(10).join('- ' + r for r in candidate['roles']['primary'])}
@@ -63,9 +69,8 @@ Tech stack:
 - Strong: {', '.join(candidate['skills']['strong'])}
 - Learning: {', '.join(candidate['skills']['learning'])}
 
-Key project: {candidate['projects'][0]['name']}
-Description: {candidate['projects'][0]['description']}
-Relevance signal: {candidate['projects'][0]['relevance_signal']}
+Projects (all three are strong portfolio signals):
+{projects_text}
 
 Location: {candidate['location']['base']}
 Acceptable locations: {', '.join(candidate['location']['acceptable'])}
@@ -87,19 +92,22 @@ Job Description:
 ## SCORING RULES
 
 Score 1-10:
-- 10 = Perfect (Go + fintech/crypto + intern/fresher + India/remote)
-- 8-9 = Very strong (backend intern, Go or close stack)
-- 6-7 = Good (backend adjacent, potentially relevant)
+- 10 = Perfect match (backend intern/fresher + India/Remote + strong stack match)
+- 8-9 = Very strong (backend intern, Go or TypeScript/Node.js, relevant company)
+- 6-7 = Good (backend adjacent, potentially relevant, worth applying)
 - 4-5 = Weak (tangentially related)
 - 1-3 = Not relevant
 
 Mandatory rules:
 - Requires >1 year exp: score 0-2 (pre-filter miss)
-- If the description mentions an application deadline or 'apply by' date that has already passed relative to Today's Date ({today}), OR indicates the post is older than 2 months: score 1-3
+- If the post is older than 2 months OR has a passed application deadline: score 1-3
 - Go/Golang mentioned: +2 to base score
-- Fintech/crypto/payments company using Go: +2 to base score
-- Crypto exchange project relevant: +2 to base score
+- TypeScript or Node.js backend role: +1 to base score
+- General backend focus (REST APIs, microservices, databases): +1 to base score
+- Fintech/crypto/payments company: +2 to base score
+- Any of candidate's projects are directly relevant: +2 to base score
 - Location outside India AND in-office only: score = 1
+- Internshala source with matching stipend (>=10000 INR/month): slight bonus
 
 TOKEN SAVING RULE — IMPORTANT:
 If score < 6: set reason="", highlights=[], red_flags=[] — do NOT write any text for these fields.

@@ -4,42 +4,50 @@
 #   1. Go to the company's Careers page
 #   2. Click on any open job posting
 #   3. Look at the URL of the job or application page:
-#      - greenhouse.io/...  → add slug to 'greenhouse' list
-#      - lever.co/...       → add slug to 'lever' list
-#      - ashbyhq.com/...    → add slug to 'ashby' list
-#      - workable.com/...   → add slug to 'workable' list
-#   4. The slug is the company-specific part of the URL
-#      e.g. boards.greenhouse.io/v1/boards/SLUG/jobs
+#      - job-boards.greenhouse.io/...     → add slug to 'greenhouse' list (US)
+#      - job-boards.eu.greenhouse.io/...  → add slug to 'greenhouse_eu' list (EU)
+#      - jobs.lever.co/...               → add slug to 'lever' list
+#      - jobs.ashbyhq.com/...            → add slug to 'ashby' list
+#      - apply.workable.com/...          → add slug to 'workable' list
 #
-# VERIFIED slugs (tested against live API, return 200):
+# VERIFIED slugs (tested against live API, return 200 + jobs):
+#   Razorpay → Greenhouse US: boards.greenhouse.io/v1/boards/razorpaysoftwareprivatelimited/jobs?content=true
+#   Groww    → Greenhouse EU: boards.eu.greenhouse.io/v1/boards/groww/jobs?content=true
+#   Meesho   → Lever:         api.lever.co/v0/postings/meesho
+#   Hevo Data→ Lever:         api.lever.co/v0/postings/hevodata
+#   Stable $ → Lever:         api.lever.co/v0/postings/stable-money1
 # ─────────────────────────────────────────────────────────────────────
 
+# Greenhouse US — endpoint: boards.greenhouse.io/v1/boards/{SLUG}/jobs?content=true
 greenhouse:
-  - groww              # ✅ verified — returns jobs
-  - swiggy             # ✅ verified — confirmed via browser
-  # Add more below after verifying on https://boards.greenhouse.io/v1/boards/{SLUG}/jobs
-  # Broken slugs removed (returned 404): razorpay, browserstack, innovaccer,
+  - razorpaysoftwareprivatelimited  # ✅ verified — 57 jobs
+  # swiggy removed — returns 404 (moved to different ATS)
+  # Add more: check job-boards.greenhouse.io/{SLUG} to find the slug
+  # Dead slugs removed (returned 404): razorpay, browserstack, innovaccer,
   #   unacademy, mpl-gaming, zepto, cred, slice-card, open-financial-technologies,
   #   smallcase, niyo, fi-money, jupiter-money, kreditbee
-  # These companies may use a different ATS or a different slug — check their
-  # careers page directly.
 
+# Greenhouse EU — endpoint: boards.eu.greenhouse.io/v1/boards/{SLUG}/jobs?content=true
+# Companies that use the European Greenhouse instance
+greenhouse_eu:
+  - groww                           # ✅ verified — Groww uses EU Greenhouse (NOT US!)
+
+# Lever — endpoint: api.lever.co/v0/postings/{SLUG}
 lever:
-  - meesho             # ✅ verified — returns 53 jobs
-  # Add more below after verifying on https://api.lever.co/v0/postings/{SLUG}
-  # Broken slugs removed (returned 404): swiggy (now on Greenhouse), zomato,
-  #   urban-company, ola, navi-technologies, lendingkart, indmoney, cube-wealth,
-  #   recur-club
+  - meesho                          # ✅ verified — 53 jobs
+  - hevodata                        # ✅ verified — Hevo Data
+  - stable-money1                   # ✅ verified — Stable Money
+  # Dead slugs removed (returned 404): swiggy (now on Greenhouse), zomato,
+  #   urban-company, ola, navi-technologies, lendingkart, indmoney, cube-wealth, recur-club
 
+# Ashby — endpoint: api.ashbyhq.com/posting-api/job-board/{SLUG}
 ashby:
-  # Ashby API endpoint: https://api.ashbyhq.com/posting-api/job-board/{SLUG}
-  # Previous slugs were using wrong domain (setu.jobs.ashbyhq.com doesn't resolve).
-  # Find the correct slug from the company's careers page URL.
-  # e.g. jobs.ashbyhq.com/SLUG → use that SLUG here
+  # Find the correct slug from the company's careers page URL: jobs.ashbyhq.com/SLUG
   # - setu              # needs slug verification
   # - decentro          # needs slug verification
   # - cashfree-payments # needs slug verification
 
+# Workable — endpoint: apply.workable.com/api/v3/accounts/{SLUG}/jobs
 workable:
   - juspay             # returned 0 jobs (may have no open roles right now)
   # sarvam-ai returned 404 — verify correct slug at apply.workable.com/{SLUG}

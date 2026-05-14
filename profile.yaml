@@ -5,35 +5,42 @@
 # SOURCE TOGGLES — set to false to skip a source completely
 # ─────────────────────────────────────────────────────────────────
 sources:
-  ats:        true   # Greenhouse / Lever / Ashby / Workable API polling (most reliable)
-  cutshort:   false   # Cutshort.io scraping
-  instahyre:  true   # Instahyre API + scraping fallback
-  wellfound:  false  # DISABLED — blocks requests / shows verification wall
-  serper:     true   # Google search dork discovery via Serper.dev
-  hackernews: true   # HN "Who is Hiring?" monthly thread
-  reddit:     true   # Reddit RSS feeds
+  ats:          true   # Greenhouse US/EU / Lever / Ashby / Workable API polling
+  cutshort:     false  # Cutshort.io (public API unreliable — disabled)
+  instahyre:    true   # Instahyre API + scraping fallback
+  wellfound:    false  # DISABLED — blocks requests / shows verification wall
+  serper:       true   # Google search dork discovery via Serper.dev
+  hackernews:   true   # HN "Who is Hiring?" monthly thread
+  reddit:       false  # DISABLED — only returns people-looking-for-work posts
+  internshala:  true   # Internshala internships & fresher jobs (India #1)
+  yc:           true   # YC portfolio company job board
 
 
 candidate:
   name: "Rohit Kumar Roy"
-  
+  email: "connect.rohitroy@gmail.com"
+
   # What you're looking for
   roles:
     primary:
       - "Backend Engineering Intern"
       - "Software Engineering Intern"
-      - "Junior Backend Developer"
       - "Backend Developer Fresher"
+      - "Junior Backend Developer"
+      - "Node.js Intern"
+      - "TypeScript Backend Intern"
       - "Go Developer Intern"
       - "Golang Developer Fresher"
     secondary:
       - "Full Stack Intern"
       - "Full Stack Developer Fresher"
       - "Software Developer Fresher"
+      - "API Developer Intern"
+      - "SDE Intern"
 
   # Experience level — CRITICAL
   experience:
-    years: 0                        # You are a fresher
+    years: 0                        # Fresher — graduating May 2027
     max_required: 1                 # HARD REJECT if job requires more than this
     acceptable_labels:
       - "fresher"
@@ -42,27 +49,45 @@ candidate:
       - "entry level"
       - "junior"
       - "0 years"
+      - "trainee"
 
-  # Tech stack (in order of preference)
+  # Tech stack (in order of strength)
   skills:
     strong:
       - "Go"
       - "Golang"
+      - "TypeScript"
       - "REST APIs"
-      - "PostgreSQL"
       - "gRPC"
+      - "Protobuf"
+      - "PostgreSQL"
+      - "Redis"
       - "Docker"
       - "Git"
+      - "Linux"
     learning:
       - "Kubernetes"
-      - "Redis"
       - "AWS"
+      - "Node.js"
+      - "Microservices"
 
-  # Notable projects for context-based scoring
+  # Resume projects — used for context-based scoring
   projects:
-    - name: "Crypto Exchange"
-      description: "Built a full crypto exchange from scratch in Go with order matching engine, real-time price feeds, wallet management, and trade execution"
-      relevance_signal: "Fintech, crypto, trading, payments, Go, high-performance systems"
+    - name: "Zaraba — Crypto Exchange"
+      description: "Built a full crypto exchange in Go with real-time order matching engine, in-memory orderbook, gRPC-based microservice architecture, wallet management, and trade execution using fixed-point arithmetic"
+      relevance_signal: "Fintech, crypto, trading, payments, Go, gRPC, high-performance systems, real-time"
+    - name: "CipherBin — Ephemeral Code Sharing"
+      description: "Full-stack Go web app with Templ engine (server-side rendering), PostgreSQL backend with Clean Architecture, session-based authentication, prepared statements"
+      relevance_signal: "Go, PostgreSQL, web development, security, clean architecture"
+    - name: "Sentinel-Proxy — Real-time Traffic Monitor"
+      description: "Reverse proxy built in Go with gRPC streaming that monitors outgoing traffic, tracks behavior with Redis, and flags suspicious data exfiltration patterns using adaptive thresholds"
+      relevance_signal: "Go, gRPC, Redis, security, infrastructure, streaming, proxy"
+
+  # Education
+  education:
+    degree: "B.Tech Computer Science (IoT)"
+    institution: "Techno Main Salt Lake, Kolkata"
+    graduation: "May 2027"
 
   # Location preferences
   location:
@@ -76,6 +101,7 @@ candidate:
       - "Hyderabad"
       - "Delhi NCR"
       - "Chennai"
+      - "Kolkata"
     hard_reject:
       - "US only"
       - "UK only"
@@ -98,6 +124,8 @@ candidate:
       - "Infrastructure"
       - "API-first companies"
       - "E-commerce backend"
+      - "Cybersecurity"
+      - "DevTools"
 
   # Compensation
   salary:
@@ -106,8 +134,8 @@ candidate:
 
 # Hard reject rules — checked BEFORE AI, saves tokens
 hard_reject:
-  max_job_age_days: 60              # Reject jobs posted more than 60 days (2 months) ago
-  
+  max_job_age_days: 45              # Tightened: reject jobs older than 45 days
+
   experience_keywords:
     # If ANY of these appear in the job description → immediate reject
     - "2+ years"
@@ -126,6 +154,7 @@ hard_reject:
 
   company_blacklist:
     # IT services / consultancies — typically not product work
+    # Uncomment if you want to exclude these
     # - "TCS"
     # - "Infosys"
     # - "Wipro"
@@ -134,26 +163,29 @@ hard_reject:
     # - "Accenture"
     # - "Capgemini"
     # - "Tech Mahindra"
-    # - "Mphasis"
 
   role_blacklist:
     # Unrelated roles that might appear in searches
     - "Data Scientist"
     - "Machine Learning Engineer"
+    - "ML Engineer"
     - "DevOps Engineer"               # unless it also has backend component
     - "QA Engineer"
     - "Test Engineer"
     - "Business Analyst"
     - "Product Manager"
     - "UI Designer"
+    - "UX Designer"
     - "Frontend Developer"            # unless full-stack
 
 # Scoring weights (used in AI prompt)
 scoring_weights:
   golang_mentioned: +2
+  typescript_mentioned: +1
+  backend_focused: +1
   fintech_crypto_company: +2
   remote_or_india: +1
-  project_stack_match: +2           # if your crypto exchange is relevant
+  project_stack_match: +2           # if crypto exchange / sentinel-proxy is relevant
   exact_role_match: +2
   mentions_equity_esop: +0.5
   unknown_company: -0.5             # slight penalty for no-info companies

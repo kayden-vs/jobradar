@@ -9,39 +9,46 @@ SERPER_API_KEY = os.getenv("SERPER_API_KEY")
 SERPER_URL = "https://google.serper.dev/search"
 
 # Hard cap: never spend more than this many Serper API credits per run.
-# Free tier = 2,500/month. At 15/day × 30 days = 450/month. Well within limit.
-# Each query costs exactly 1 credit regardless of how many results it returns.
-MAX_SERPER_CALLS = 15
+# Free tier = 2,500/month. At 20/day × 30 days = 600/month. Well within limit.
+MAX_SERPER_CALLS = 20
 
 # --- Dork templates ---
-# These are tuned specifically for:
-# Backend intern/fresher + Golang + India/Remote + Fintech preferred
-# NOTE: We use at most MAX_SERPER_CALLS from this list per run.
+# Tuned for: Backend intern/fresher + Go OR TypeScript/Node.js + India/Remote
+# NOT just Golang — broad backend coverage now.
 DORK_QUERIES = [
-    # Core role dorks
-    '"backend intern" OR "backend fresher" "golang" OR "go" india',
-    '"software engineer intern" "go" OR "golang" "bangalore" OR "remote"',
-    '"backend developer" "0-1 years" OR "fresher" "golang" india',
+    # ── General Backend (broad) ──────────────────────────────────────────────
+    '"backend intern" OR "backend fresher" india site:*.in OR site:*.io OR site:*.co',
     '"backend engineering intern" india -site:linkedin.com -site:naukri.com',
-    '"junior backend developer" "go" OR "golang" india 2026',
+    '"backend developer" "0-1 years" OR "fresher" OR "intern" india 2026',
+    '"software engineer intern" "backend" OR "api" india -site:linkedin.com',
+    '"junior backend developer" india 2026',
+    '"SDE intern" OR "software developer intern" "backend" india',
 
-    # Fintech/crypto specific — crypto exchange project is directly relevant
+    # ── Golang specific ──────────────────────────────────────────────────────
+    '"backend intern" OR "backend fresher" "golang" OR "go" india',
+    '"go developer" intern OR fresher india OR remote',
+    '"software engineer intern" "go" OR "golang" "bangalore" OR "remote"',
+
+    # ── TypeScript / Node.js specific ────────────────────────────────────────
+    '"backend intern" OR "backend fresher" "typescript" OR "node.js" OR "nodejs" india',
+    '"node.js intern" OR "nodejs intern" india OR remote',
+    '"typescript backend" intern OR fresher india',
+    '"backend developer" "typescript" OR "node" "0-1 years" OR "fresher" india',
+
+    # ── Fintech / Crypto (your strongest project signal) ─────────────────────
     '"backend intern" "fintech" OR "payments" OR "crypto" india',
-    '"software intern" "crypto" OR "blockchain" OR "defi" "golang" OR "go"',
-    '"backend engineer" "fresher" "payments" india -site:linkedin.com',
-    '"go developer" intern OR fresher "india" OR "remote"',
+    '"software intern" "crypto" OR "blockchain" OR "defi" india',
+    '"backend engineer" "fresher" "payments" OR "fintech" india -site:linkedin.com',
 
-    # Google Form job applications (hidden from all aggregators)
-    '"docs.google.com/forms" "backend intern" "golang" OR "go"',
+    # ── Google Form applications (hidden from aggregators) ───────────────────
+    '"docs.google.com/forms" "backend intern" india',
     '"forms.gle" "apply" "software engineer" "intern" india',
-    '"google form" "backend developer" "fresher" OR "intern" india 2026',
 
-    # Company career pages directly
-    'intitle:"careers" "backend intern" "golang" site:*.in',
+    # ── Company career pages directly ────────────────────────────────────────
+    'intitle:"careers" "backend intern" OR "backend fresher" site:*.in',
+    '"we are hiring" "backend" "intern" OR "fresher" india -site:linkedin.com',
     'intitle:"join us" "backend engineer" "fresher" site:*.io',
-    '"we are hiring" "backend intern" "go" OR "golang" -site:linkedin.com',
 ]
-# Trim to cap at runtime (not here) so list stays readable
 
 
 def search_serper(query: str) -> list[dict]:
@@ -68,11 +75,14 @@ def search_serper(query: str) -> list[dict]:
 def is_job_related_url(url: str) -> bool:
     """Quick check to avoid wasting Scrapling fetches on irrelevant pages."""
     skip_domains = ["naukri.com", "linkedin.com", "indeed.com", "glassdoor.com",
-                    "shine.com", "timesjobs.com", "monsterindia.com"]
+                    "shine.com", "timesjobs.com", "monsterindia.com",
+                    "internshala.com",  # covered by dedicated source
+                    "hirist.tech",      # covered by dedicated source (if enabled)
+                    ]
     job_signals  = ["careers", "jobs", "hiring", "apply", "forms.gle",
                     "docs.google.com/forms", "greenhouse.io", "lever.co",
-                    "job", "opening", "position"]
-    
+                    "job", "opening", "position", "vacancy"]
+
     url_lower = url.lower()
     if any(d in url_lower for d in skip_domains):
         return False   # Already covered by dedicated scrapers
@@ -82,28 +92,22 @@ def is_job_related_url(url: str) -> bool:
 def extract_job_from_page(url: str, title_hint: str, company_hint: str) -> dict | None:
     """
     Uses Scrapling to fetch a discovered URL and extract job details.
-    - Plain Fetcher uses .get() (HTTP only, fast, for static pages)
-    - StealthyFetcher uses .fetch() (browser, for JS/protected pages)
-    Adds a small delay between fetches to avoid rate-limiting.
+    - Plain Fetcher: fast HTTP-only, works for static pages
+    - StealthyFetcher: headless browser, for JS-rendered / bot-protected pages
     """
     import time
-    time.sleep(1)  # Rate limit: 1 req/sec to avoid getting blocked
+    time.sleep(1)  # Rate limit: 1 req/sec
 
     try:
-        # Try fast plain HTTP request first (Fetcher uses .get(), NOT .fetch())
         page = Fetcher().get(url, timeout=15)
-
-        # Look for job-related content signals
         body_text = page.get_all_text(ignore_tags=["script", "style", "nav", "footer"])
+
         if len(body_text) < 200:
-            # Page might need JS rendering — retry with stealthy browser
-            time.sleep(2)  # Extra delay before browser fetch
-            # Note: headless and network_idle are valid StealthyFetcher.fetch() params
+            time.sleep(2)
             page = StealthyFetcher.fetch(url, headless=True, network_idle=True)
             body_text = page.get_all_text(ignore_tags=["script", "style", "nav", "footer"])
 
-
-        # If it's a Google Form, extract the form title and description
+        # Google Form: just return title + description text
         if "docs.google.com/forms" in url or "forms.gle" in url:
             return {
                 "title":       title_hint,
@@ -134,7 +138,8 @@ def extract_job_from_page(url: str, title_hint: str, company_hint: str) -> dict 
 def _extract_location(text: str) -> str:
     """Simple heuristic to find location in job description."""
     keywords = ["remote", "bangalore", "bengaluru", "mumbai", "hyderabad",
-                "delhi", "ncr", "pune", "chennai", "kolkata", "india"]
+                "delhi", "ncr", "pune", "chennai", "kolkata", "india",
+                "work from home", "wfh", "hybrid"]
     text_lower = text.lower()
     found = [k.title() for k in keywords if k in text_lower]
     return " / ".join(found[:3]) if found else "Not specified"
@@ -159,25 +164,22 @@ def _extract_salary(text: str) -> str:
 def fetch_serper_jobs() -> list[dict]:
     """
     Main function: runs dork queries (capped at MAX_SERPER_CALLS) and
-    extracts the full job description from each discovered page using Scrapling.
-    
-    Serper budget: each query = 1 API credit. With MAX_SERPER_CALLS=15 and
-    30 days/month that's 450 credits/month, well within the 2,500 free tier.
-    
-    JD fetching: after Serper returns URLs, we visit each one with Scrapling
-    and extract all visible text. This IS the job description that gets scored.
+    extracts the full job description from each discovered page.
+
+    Serper budget: each query = 1 credit.
+    20 queries/day × 30 days = 600 credits/month (free tier: 2,500/month).
     """
     all_jobs = []
     seen_urls = set()
     queries_run = 0
 
-    for query in DORK_QUERIES[:MAX_SERPER_CALLS]:  # Hard cap
+    for query in DORK_QUERIES[:MAX_SERPER_CALLS]:
         results = search_serper(query)
         queries_run += 1
 
         for result in results:
-            url     = result.get("link", "")
-            title   = result.get("title", "")
+            url   = result.get("link", "")
+            title = result.get("title", "")
 
             if not url or url in seen_urls:
                 continue
@@ -185,7 +187,6 @@ def fetch_serper_jobs() -> list[dict]:
                 continue
 
             seen_urls.add(url)
-
             company = _guess_company(url, title)
             job = extract_job_from_page(url, title, company)
             if job:

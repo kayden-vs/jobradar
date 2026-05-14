@@ -10,7 +10,6 @@ load_dotenv()
 os.makedirs("data", exist_ok=True)
 
 # Force UTF-8 on Windows console to prevent cp1252 UnicodeEncodeError
-# (Windows terminal defaults to cp1252 which can't handle many Unicode chars)
 stream_handler = logging.StreamHandler(stream=open(
     sys.stdout.fileno(), 'w', encoding='utf-8', closefd=False
 ))
@@ -34,6 +33,8 @@ from sources.wellfound import fetch_wellfound
 from sources.serper import fetch_serper_jobs
 from sources.hackernews import fetch_hn_hiring
 from sources.reddit import fetch_reddit
+from sources.internshala import fetch_internshala
+from sources.yc import fetch_yc
 from pipeline.dedup import deduplicate
 from pipeline.prefilter import prefilter, load_profile
 from pipeline.scorer import score_all
@@ -44,15 +45,14 @@ def run():
     logger.info("=" * 50)
     logger.info("JobRadar pipeline starting")
     logger.info("=" * 50)
-    
+
     # --- Setup ---
     init_db()
     profile   = load_profile()
     companies = load_companies()
-    
+
     # --- SOURCE LAYER ---
     # Control which sources run via profile.yaml `sources:` block.
-    # Any source set to false is skipped entirely.
     sources_cfg = profile.get("sources", {})
 
     def source_enabled(name: str) -> bool:
@@ -65,7 +65,7 @@ def run():
     raw_jobs = []
 
     if source_enabled("ats"):
-        logger.info("--- Fetching ATS endpoints ---")
+        logger.info("--- Fetching ATS endpoints (Greenhouse US/EU, Lever, Ashby, Workable) ---")
         raw_jobs.extend(fetch_all_ats(companies))
 
     if source_enabled("cutshort"):
@@ -79,6 +79,14 @@ def run():
     if source_enabled("wellfound"):
         logger.info("--- Fetching Wellfound ---")
         raw_jobs.extend(fetch_wellfound())
+
+    if source_enabled("internshala"):
+        logger.info("--- Fetching Internshala ---")
+        raw_jobs.extend(fetch_internshala())
+
+    if source_enabled("yc"):
+        logger.info("--- Fetching YC Jobs ---")
+        raw_jobs.extend(fetch_yc())
 
     if source_enabled("serper"):
         logger.info("--- Fetching via Serper discovery ---")
@@ -95,27 +103,26 @@ def run():
     total_raw = len(raw_jobs)
     logger.info(f"Total raw jobs from all sources: {total_raw}")
 
-    
     # --- DEDUPLICATION ---
     new_jobs = deduplicate(raw_jobs)
-    
+
     # --- PRE-FILTER ---
     # Drops ~80% of remaining jobs with zero AI cost
     eligible_jobs = prefilter(new_jobs, profile)
-    
+
     if not eligible_jobs:
         logger.info("No new eligible jobs after pre-filter. Done.")
         asyncio.run(send_run_summary(total_raw, 0, 0, 0))
         return
-    
+
     # --- AI SCORING ---
     urgent_jobs, digest_jobs, low_jobs = score_all(eligible_jobs)
-    
+
     # --- NOTIFICATIONS ---
     if urgent_jobs:
         logger.info(f"Sending {len(urgent_jobs)} urgent Telegram alerts")
         notify_urgent_jobs(urgent_jobs)
-    
+
     # Send run summary
     asyncio.run(send_run_summary(
         total_raw     = total_raw,
@@ -123,7 +130,7 @@ def run():
         scored        = len(eligible_jobs),
         urgent        = len(urgent_jobs),
     ))
-    
+
     logger.info("Pipeline complete.")
     logger.info(f"Summary: {total_raw} raw -> {len(new_jobs)} new -> {len(eligible_jobs)} eligible -> {len(urgent_jobs)} urgent")
 

@@ -26,16 +26,18 @@ def _strip_html(html: str) -> str:
 
 
 # ─────────────────────────────────────────────────────────────────
-# GREENHOUSE
+# GREENHOUSE US
 # ─────────────────────────────────────────────────────────────────
 
-def _fetch_greenhouse_jd(company_slug: str, job_id: int) -> str:
+def _fetch_greenhouse_jd(company_slug: str, job_id: int, eu: bool = False) -> str:
     """
     Fetch full JD from Greenhouse single-job endpoint.
-    URL: https://boards.greenhouse.io/v1/boards/{slug}/jobs/{job_id}
-    The 'content' field contains the full HTML job description.
+    Supports both US (boards.greenhouse.io) and EU (boards.eu.greenhouse.io).
     """
-    url = f"https://boards.greenhouse.io/v1/boards/{company_slug}/jobs/{job_id}"
+    if eu:
+        url = f"https://boards.eu.greenhouse.io/v1/boards/{company_slug}/jobs/{job_id}"
+    else:
+        url = f"https://boards.greenhouse.io/v1/boards/{company_slug}/jobs/{job_id}"
     try:
         r = requests.get(url, timeout=10)
         r.raise_for_status()
@@ -46,13 +48,20 @@ def _fetch_greenhouse_jd(company_slug: str, job_id: int) -> str:
         return ""
 
 
-def fetch_greenhouse(company_slug: str) -> list[dict]:
+def fetch_greenhouse(company_slug: str, eu: bool = False) -> list[dict]:
     """
     Polls the Greenhouse public API for a company.
-    List endpoint: https://boards.greenhouse.io/v1/boards/{slug}/jobs
-    JD endpoint:   https://boards.greenhouse.io/v1/boards/{slug}/jobs/{id}
+    Set eu=True for companies on the European Greenhouse instance
+    (boards.eu.greenhouse.io) — e.g. Groww.
+
+    List endpoint: https://boards[.eu].greenhouse.io/v1/boards/{slug}/jobs?content=true
+    The ?content=true param returns the full JD inline, saving one extra API call per job.
     """
-    url = f"https://boards.greenhouse.io/v1/boards/{company_slug}/jobs"
+    if eu:
+        url = f"https://boards.eu.greenhouse.io/v1/boards/{company_slug}/jobs?content=true"
+    else:
+        url = f"https://boards.greenhouse.io/v1/boards/{company_slug}/jobs?content=true"
+
     try:
         r = requests.get(url, timeout=10)
         r.raise_for_status()
@@ -60,24 +69,25 @@ def fetch_greenhouse(company_slug: str) -> list[dict]:
         jobs = []
         for job in data.get("jobs", []):
             location_parts = [loc.get("name", "") for loc in job.get("offices", [])]
-            job_id = job.get("id")
-            
-            # Fetch full JD (one extra API call per job — still fast, no scraping)
-            description = _fetch_greenhouse_jd(company_slug, job_id) if job_id else ""
-            
+
+            # With ?content=true, the description is already in the list response
+            desc_html = job.get("content", "")
+            description = _strip_html(desc_html) if desc_html else _fetch_greenhouse_jd(company_slug, job.get("id"), eu=eu)
+
             jobs.append({
                 "title":       job.get("title", ""),
                 "company":     company_slug.replace("-", " ").title(),
                 "location":    ", ".join(location_parts) or "Not specified",
                 "description": description,
                 "url":         job.get("absolute_url", ""),
-                "source":      "greenhouse",
+                "source":      "greenhouse_eu" if eu else "greenhouse",
                 "salary":      "",
                 "posted_at":   job.get("updated_at", ""),
             })
         return jobs
     except Exception as e:
-        logger.warning(f"Greenhouse fetch failed for {company_slug}: {e}")
+        region = "EU" if eu else "US"
+        logger.warning(f"Greenhouse {region} fetch failed for {company_slug}: {e}")
         return []
 
 
@@ -138,10 +148,8 @@ def fetch_lever(company_slug: str) -> list[dict]:
 def fetch_ashby(company_slug: str) -> list[dict]:
     """
     Polls Ashby HQ's public API.
-    Ashby returns descriptionHtml in the list endpoint — full JD is available.
     URL: https://api.ashbyhq.com/posting-api/job-board/{slug}
     """
-    # Ashby's correct public API endpoint
     url = f"https://api.ashbyhq.com/posting-api/job-board/{company_slug}"
     try:
         r = requests.get(url, timeout=10)
@@ -176,7 +184,6 @@ def _fetch_workable_jd(company_slug: str, shortcode: str) -> str:
         r = requests.get(url, timeout=10)
         r.raise_for_status()
         data = r.json()
-        # Workable full job has 'full_description' or 'description'
         return _strip_html(data.get("full_description", "") or data.get("description", ""))
     except Exception as e:
         logger.debug(f"Workable JD fetch failed for {shortcode}: {e}")
@@ -194,13 +201,12 @@ def fetch_workable(company_slug: str) -> list[dict]:
         r.raise_for_status()
         jobs = []
         for job in r.json().get("results", []):
-            shortcode   = job.get("shortcode", "")
-            location    = job.get("location", {})
+            shortcode    = job.get("shortcode", "")
+            location     = job.get("location", {})
             location_str = ", ".join(filter(None, [location.get("city", ""), location.get("country", "")])) or "Not specified"
-            
-            # Fetch full JD
+
             description = _fetch_workable_jd(company_slug, shortcode) if shortcode else ""
-            
+
             jobs.append({
                 "title":       job.get("title", ""),
                 "company":     company_slug.replace("-", " ").title(),
@@ -225,10 +231,17 @@ def fetch_all_ats(companies_config: dict) -> list[dict]:
     """Main function: polls all companies in companies.yaml"""
     all_jobs = []
 
+    # Greenhouse US
     for company in companies_config.get("greenhouse") or []:
-        jobs = fetch_greenhouse(company)
+        jobs = fetch_greenhouse(company, eu=False)
         all_jobs.extend(jobs)
-        logger.info(f"Greenhouse {company}: {len(jobs)} jobs")
+        logger.info(f"Greenhouse US {company}: {len(jobs)} jobs")
+
+    # Greenhouse EU (e.g. Groww)
+    for company in companies_config.get("greenhouse_eu") or []:
+        jobs = fetch_greenhouse(company, eu=True)
+        all_jobs.extend(jobs)
+        logger.info(f"Greenhouse EU {company}: {len(jobs)} jobs")
 
     for company in companies_config.get("lever") or []:
         jobs = fetch_lever(company)

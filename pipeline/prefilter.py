@@ -1,8 +1,8 @@
 import yaml
 import re
 import logging
-from datetime import datetime, timezone
-from dateutil import parser
+from datetime import datetime, timezone, timedelta
+from dateutil import parser as dateutil_parser
 
 logger = logging.getLogger(__name__)
 
@@ -10,6 +10,74 @@ logger = logging.getLogger(__name__)
 def load_profile(path="profile.yaml") -> dict:
     with open(path) as f:
         return yaml.safe_load(f)
+
+
+# ─────────────────────────────────────────────────────────────────
+# DATE PARSING — handles ISO strings AND relative strings
+# ─────────────────────────────────────────────────────────────────
+
+def _parse_posted_at(posted_at: str) -> datetime | None:
+    """
+    Parse a posted_at string into a timezone-aware datetime.
+
+    Handles:
+      - ISO 8601 / RFC 2822 strings  (dateutil)
+      - Relative strings:
+          "2 days ago", "3 weeks ago", "1 month ago", "2 months ago",
+          "Posted 3 days ago", "about 2 weeks ago", "an hour ago"
+      - Unix epoch integers stored as strings (Lever uses ms)
+    """
+    if not posted_at:
+        return None
+
+    s = str(posted_at).strip()
+
+    # --- Relative date strings ---
+    # normalise: lowercase, strip leading "posted", "about", "over", "almost"
+    s_lower = re.sub(r'^(posted|about|over|almost|around)\s+', '', s.lower()).strip()
+
+    # "an hour ago" / "a day ago" / "a week ago" / "a month ago"
+    s_lower = re.sub(r'\ban?\b', '1', s_lower)
+
+    patterns = [
+        # "X minutes ago"
+        (r'(\d+)\s*minute[s]?\s+ago', lambda m: timedelta(minutes=int(m.group(1)))),
+        # "X hours ago"
+        (r'(\d+)\s*hour[s]?\s+ago',   lambda m: timedelta(hours=int(m.group(1)))),
+        # "X days ago"
+        (r'(\d+)\s*day[s]?\s+ago',    lambda m: timedelta(days=int(m.group(1)))),
+        # "X weeks ago"
+        (r'(\d+)\s*week[s]?\s+ago',   lambda m: timedelta(weeks=int(m.group(1)))),
+        # "X months ago"  — approximate as 30 days each
+        (r'(\d+)\s*month[s]?\s+ago',  lambda m: timedelta(days=int(m.group(1)) * 30)),
+        # "X years ago"
+        (r'(\d+)\s*year[s]?\s+ago',   lambda m: timedelta(days=int(m.group(1)) * 365)),
+    ]
+    now = datetime.now(timezone.utc)
+    for pattern, delta_fn in patterns:
+        m = re.search(pattern, s_lower)
+        if m:
+            return now - delta_fn(m)
+
+    # --- Unix epoch (ms or s) ---
+    if re.fullmatch(r'\d{10,13}', s):
+        ts = int(s)
+        if ts > 1e12:   # milliseconds
+            ts /= 1000
+        try:
+            return datetime.fromtimestamp(ts, tz=timezone.utc)
+        except Exception:
+            pass
+
+    # --- ISO / RFC / anything dateutil can handle ---
+    try:
+        dt = dateutil_parser.parse(s)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
+    except Exception:
+        logger.debug(f"Could not parse posted_at: '{s}'")
+        return None
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -70,16 +138,20 @@ def check_candidate_post(job: dict) -> tuple[bool, str]:
     if job.get("company", "") == "CANDIDATE_POST":
         return True, "Candidate post"
     title = job.get("title", "").lower()
-    if title.startswith("[for hire]") or title.startswith("seeking"):
-        return True, "Candidate post"
+    # Common patterns for people seeking work (not job postings)
+    candidate_signals = [
+        "[for hire]", "seeking", "looking for work", "open to work",
+        "available for", "hire me", "i am looking", "i'm looking",
+        "[seeking]", "need a job", "job seeker",
+    ]
+    for sig in candidate_signals:
+        if title.startswith(sig) or sig in title:
+            return True, f"Candidate post signal: '{sig}'"
     return False, ""
 
 
 def check_has_meaningful_title(job: dict) -> tuple[bool, str]:
-    """
-    NEW: Reject jobs with no or empty title. These slip through other
-    filters and waste an AI scoring call.
-    """
+    """Reject jobs with no or empty title."""
     title = job.get("title", "").strip()
     if len(title) < 3:
         return True, "Missing or empty title"
@@ -88,7 +160,7 @@ def check_has_meaningful_title(job: dict) -> tuple[bool, str]:
 
 def check_title_relevance(title: str) -> tuple[bool, str]:
     """
-    NEW: Tighter positive filter — job title must contain at least one
+    Tighter positive filter — job title must contain at least one
     signal word indicating it could be a backend/software role.
     This blocks obvious non-tech roles (HR, marketing, sales, designer)
     before they reach the AI scorer.
@@ -100,7 +172,9 @@ def check_title_relevance(title: str) -> tuple[bool, str]:
         "backend", "software", "engineer", "developer", "dev",
         "intern", "fresher", "full stack", "fullstack", "sde",
         "golang", "go ", " go,", "python", "api", "server",
-        "platform", "infrastructure", "data engineer", "ml engineer",
+        "platform", "infrastructure", "data engineer", "typescript",
+        "node", "node.js", "nodejs", "systems", "cloud", "devops",
+        "ml engineer", "swe",
     ]
     for signal in keep_signals:
         if signal in title_lower:
@@ -120,20 +194,16 @@ def check_title_relevance(title: str) -> tuple[bool, str]:
         if role in title_lower:
             return True, f"Non-tech role title: '{role}'"
 
-    # If title has no tech signals AND is not a clearly tech role, keep it
-    # (don't over-filter, just kill obvious non-tech)
     return False, ""
 
 
 def check_no_description(job: dict) -> tuple[bool, str]:
     """
-    NEW: If a job has absolutely no description AND no meaningful title
+    If a job has absolutely no description AND no meaningful title
     context, there's nothing for the AI to score — skip it.
-    Only applies when description is truly empty (not just short).
     """
     desc = job.get("description", "").strip()
     title = job.get("title", "").strip()
-    # Only reject if both are empty/very short — can't score without any text
     if len(desc) == 0 and len(title) < 10:
         return True, "No description and no meaningful title"
     return False, ""
@@ -141,26 +211,41 @@ def check_no_description(job: dict) -> tuple[bool, str]:
 
 def check_is_old_post(job: dict, profile: dict) -> tuple[bool, str]:
     """
-    NEW: Reject jobs that are older than the max_job_age_days threshold.
+    Reject jobs that are older than the max_job_age_days threshold.
+    Uses the smart _parse_posted_at() which handles:
+      - ISO dates, RFC dates (dateutil)
+      - Relative strings: "3 days ago", "2 months ago", "Posted last week"
+      - Unix epoch timestamps
+    If posted_at is empty/unparseable, the job passes (benefit of the doubt).
     """
     max_days = profile.get("hard_reject", {}).get("max_job_age_days", 60)
     posted_at = job.get("posted_at")
+
     if not posted_at:
+        return False, ""   # No date = benefit of the doubt
+
+    # Quick-reject obvious stale signals before parsing
+    s_lower = str(posted_at).lower()
+    stale_patterns = [
+        r'\b([2-9]|\d{2,})\s*month[s]?\s*ago',   # "3 months ago" etc.
+        r'\b([2-9]|\d{2,})\s*year[s]?\s*ago',    # "2 years ago"
+    ]
+    for pat in stale_patterns:
+        m = re.search(pat, s_lower)
+        if m:
+            return True, f"Stale relative date: '{posted_at}'"
+
+    dt = _parse_posted_at(posted_at)
+    if dt is None:
+        logger.debug(f"Unparseable posted_at '{posted_at}' — passing job through")
         return False, ""
-    
-    try:
-        dt = parser.parse(posted_at)
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        
-        now = datetime.now(timezone.utc)
-        age = (now - dt).days
-        
-        if age > max_days:
-            return True, f"Job posted {age} days ago (max {max_days})"
-    except Exception as e:
-        logger.debug(f"Failed to parse date '{posted_at}': {e}")
-    
+
+    now = datetime.now(timezone.utc)
+    age = (now - dt).days
+
+    if age > max_days:
+        return True, f"Job posted {age} days ago (max {max_days})"
+
     return False, ""
 
 
@@ -174,7 +259,7 @@ def prefilter(jobs: list[dict], profile: dict) -> list[dict]:
     Order matters — cheapest checks first, most expensive last.
 
     Goal: push <30 jobs/day to the AI scorer to stay within Groq's
-    1,000 req/day and 100k token/day limits.
+    1,000 req/day and 500k token/day limits.
     """
 
     passed = []
@@ -186,13 +271,13 @@ def prefilter(jobs: list[dict], profile: dict) -> list[dict]:
 
         checks = [
             # Cheapest first
-            check_has_meaningful_title(job),           # NEW: no title = skip
-            check_no_description(job),                 # NEW: no text = skip
+            check_has_meaningful_title(job),           # no title = skip
+            check_no_description(job),                 # no text = skip
             check_candidate_post(job),                 # Not a job posting
-            check_is_old_post(job, profile),           # NEW: old post
+            check_is_old_post(job, profile),           # old post (smart date parsing)
             check_company_blacklist(company, profile), # Blacklisted company
             check_role_blacklist(title, profile),      # Blacklisted role type
-            check_title_relevance(title),              # NEW: obvious non-tech role
+            check_title_relevance(title),              # obvious non-tech role
             check_experience(description, title, profile),  # Overqualified
             check_location(description, title, profile),    # Wrong geography
         ]
