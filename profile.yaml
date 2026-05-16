@@ -18,7 +18,7 @@ sources:
 
 candidate:
   name: "Rohit Kumar Roy"
-  email: "connect.rohitroy@gmail.com"
+  email: "[EMAIL_ADDRESS]"
 
   # What you're looking for
   roles:
@@ -27,7 +27,6 @@ candidate:
       - "Software Engineering Intern"
       - "Backend Developer Fresher"
       - "Junior Backend Developer"
-      - "Node.js Intern"
       - "TypeScript Backend Intern"
       - "Go Developer Intern"
       - "Golang Developer Fresher"
@@ -65,11 +64,11 @@ candidate:
       - "Docker"
       - "Git"
       - "Linux"
+      - "Microservices"
     learning:
       - "Kubernetes"
       - "AWS"
-      - "Node.js"
-      - "Microservices"
+      # - "Node.js"
 
   # Resume projects — used for context-based scoring
   projects:
@@ -143,6 +142,11 @@ hard_reject:
     - "3+ years"
     - "4+ years"
     - "5+ years"
+    - "6+ years"
+    - "7+ years"
+    - "8+ years"
+    - "9+ years"
+    - "10+ years"
     - "minimum 2 years"
     - "at least 2 years"
     - "senior engineer"
@@ -153,16 +157,8 @@ hard_reject:
     - "staff engineer"
 
   company_blacklist:
-    # IT services / consultancies — typically not product work
-    # Uncomment if you want to exclude these
     # - "TCS"
     # - "Infosys"
-    # - "Wipro"
-    # - "HCL"
-    # - "Cognizant"
-    # - "Accenture"
-    # - "Capgemini"
-    # - "Tech Mahindra"
 
   role_blacklist:
     # Unrelated roles that might appear in searches
