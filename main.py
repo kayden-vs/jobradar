@@ -25,7 +25,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("jobradar")
 
-from storage.db import init_db, save_job
+from storage.db import init_db
 from sources.ats import fetch_all_ats, load_companies
 from sources.cutshort import fetch_cutshort
 from sources.instahyre import fetch_instahyre
@@ -39,7 +39,7 @@ from sources.freshers_blogs import fetch_freshers_blogs
 from pipeline.dedup import deduplicate
 from pipeline.prefilter import prefilter, load_profile
 from pipeline.scorer import score_all
-from notify.telegram_bot import notify_urgent_jobs, send_run_summary
+from notify.telegram_bot import notify_urgent_jobs, send_session_divider
 
 
 def run():
@@ -117,40 +117,26 @@ def run():
 
     if not eligible_jobs:
         logger.info("No new eligible jobs after pre-filter. Done.")
-        asyncio.run(send_run_summary(total_raw, 0, 0, 0))
+        send_session_divider(total_raw=total_raw, passed=0, scored=0, urgent=0)
         return
 
     # --- AI SCORING ---
     urgent_jobs, digest_jobs, low_jobs = score_all(eligible_jobs)
-
-    # --- PERSIST SCORED JOBS ---
-    # Save every scored job to DB so dedup works across runs.
-    # Must happen BEFORE notifications so notified flag is set correctly.
-    all_scored = urgent_jobs + digest_jobs + low_jobs
-    for job in all_scored:
-        notified_flag = 1 if job in urgent_jobs else (2 if job in digest_jobs else 0)
-        save_job(
-            job,
-            score      = job.get("score", 0),
-            reason     = job.get("reason", ""),
-            highlights = ", ".join(job.get("highlights", [])),
-            red_flags  = ", ".join(job.get("red_flags",  [])),
-            notified   = notified_flag,
-        )
-    logger.info(f"Saved {len(all_scored)} scored jobs to DB")
 
     # --- NOTIFICATIONS ---
     if urgent_jobs:
         logger.info(f"Sending {len(urgent_jobs)} urgent Telegram alerts")
         notify_urgent_jobs(urgent_jobs)
 
-    # Send run summary
-    asyncio.run(send_run_summary(
-        total_raw     = total_raw,
-        passed_filter = len(eligible_jobs),
-        scored        = len(eligible_jobs),
-        urgent        = len(urgent_jobs),
-    ))
+    # Session-end divider — always the last message, carries stats for the run.
+    # Sent even when urgent=0 so there's always a visible session boundary.
+    scored_count = len(urgent_jobs) + len(digest_jobs) + len(low_jobs)
+    send_session_divider(
+        total_raw = total_raw,
+        passed    = len(eligible_jobs),
+        scored    = scored_count,
+        urgent    = len(urgent_jobs),
+    )
 
     logger.info("Pipeline complete.")
     logger.info(f"Summary: {total_raw} raw -> {len(new_jobs)} new -> {len(eligible_jobs)} eligible -> {len(urgent_jobs)} urgent")

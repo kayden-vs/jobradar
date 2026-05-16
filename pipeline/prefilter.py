@@ -84,6 +84,74 @@ def _parse_posted_at(posted_at: str) -> datetime | None:
 # INDIVIDUAL CHECKS
 # ─────────────────────────────────────────────────────────────────
 
+# Phrases that appear verbatim in post titles or body when a job is closed.
+_CLOSED_PHRASES = re.compile(
+    r'application[s]?\s*(is\s*)?(now\s*)?closed'
+    r'|hiring\s*(is\s*)?(now\s*)?closed'
+    r'|recruitment\s+closed'
+    r'|position[s]?\s*(has\s+been\s*|is\s*|have\s+been\s*)?filled'
+    r'|no\s+longer\s+accepting'
+    r'|vacancy\s+closed'
+    r'|this\s+(job|position|role)\s+is\s+(no\s+longer|closed|filled)'
+    r'|we\s+are\s+no\s+longer\s+hiring'
+    r'|drive\s+(is\s+)?over'
+    r'|hiring\s+(is\s+)?closed',
+    re.IGNORECASE,
+)
+
+# Context words that precede a deadline date.
+_DEADLINE_CONTEXT_RE = re.compile(
+    r'(?:last\s+date(?:\s+to\s+apply)?'
+    r'|apply\s+before'
+    r'|application\s+(?:last\s+)?deadline'
+    r'|closing\s+date'
+    r'|application\s+close[sd]?\s+(?:on|date)'
+    r')[:\s]+([A-Za-z]+\s+\d{1,2},?\s+20\d{2}'
+    r'|\d{1,2}[\s/-][A-Za-z]+[\s/-]20\d{2}'
+    r'|\d{1,2}[/-]\d{1,2}[/-]20\d{2}'
+    r'|20\d{2}-\d{2}-\d{2})',
+    re.IGNORECASE,
+)
+
+
+def check_expiry_signals(job: dict) -> tuple[bool, str]:
+    """
+    Reject jobs where the title or RSS summary contains clear evidence
+    that the opening is already closed or the application deadline has passed.
+
+    This catches the majority of stale freshers blog posts without any HTTP
+    fetch or AI token spend.
+
+    Two signals checked:
+      1. Hard closure phrases: "application closed", "position filled", etc.
+      2. Explicit deadline dates: "Last Date: March 15, 2025" — extracted
+         and compared to today.
+    """
+    title = job.get("title", "")
+    desc  = job.get("description", "")
+    text  = title + " " + desc
+
+    # ── Hard closure phrases ───────────────────────────────────────────────
+    m = _CLOSED_PHRASES.search(text)
+    if m:
+        return True, f"Application closed signal: '{m.group(0).strip()}'"
+
+    # ── Explicit past deadline ────────────────────────────────────────────
+    now = datetime.now(timezone.utc)
+    for m in _DEADLINE_CONTEXT_RE.finditer(text):
+        date_str = m.group(1).strip()
+        try:
+            deadline = dateutil_parser.parse(date_str, dayfirst=False)
+            if deadline.tzinfo is None:
+                deadline = deadline.replace(tzinfo=timezone.utc)
+            if deadline < now:
+                return True, f"Application deadline passed: '{date_str}'"
+        except Exception:
+            pass  # Unparseable date — don't reject, let AI judge
+
+    return False, ""
+
+
 def check_experience(description: str, title: str, profile: dict) -> tuple[bool, str]:
     """
     Reject if any hard-reject experience keyword is found, or if a regex
@@ -357,6 +425,7 @@ def prefilter(jobs: list[dict], profile: dict) -> list[dict]:
             check_no_description(job),                 # no text = skip
             check_candidate_post(job),                 # Not a job posting
             check_is_old_post(job, profile),           # old post (smart date parsing)
+            check_expiry_signals(job),                 # closed/deadline-passed signals in text
             check_company_blacklist(company, profile), # Blacklisted company
             check_role_blacklist(title, profile),      # Blacklisted role type
             check_rss_tags(job),                       # Zero-cost: RSS tag exp/location filter
