@@ -6,6 +6,7 @@ import logging
 from datetime import datetime
 from groq import Groq
 from storage.db import save_job
+from sources.freshers_blogs import fetch_full_description
 
 logger = logging.getLogger(__name__)
 
@@ -128,6 +129,19 @@ Return ONLY a valid JSON object, no markdown fences:
 
 def score_job(job: dict, profile: dict) -> dict:
     """Score a single job with Groq llama-3.3-70b-versatile."""
+
+    # ── Lazy description fetch ────────────────────────────────────────────────
+    # freshers_blogs sources return empty/partial descriptions intentionally
+    # (avoids fetching hundreds of post pages upfront). After pre-filter confirms
+    # this job is worth scoring, fetch the full body now.
+    # Threshold: <100 chars — short excerpts don't give the LLM enough signal.
+    desc = job.get("description", "")
+    if len(desc) < 100 and job.get("url") and "freshers_blogs" in job.get("source", ""):
+        logger.debug(f"Lazy-fetching JD for {job.get('title', '?')}")
+        fetched = fetch_full_description(job["url"])
+        if fetched:
+            job["description"] = fetched
+
     _throttle()  # Respect rate limit before every call
 
     client = _groq_client()

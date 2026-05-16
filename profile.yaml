@@ -5,15 +5,16 @@
 # SOURCE TOGGLES — set to false to skip a source completely
 # ─────────────────────────────────────────────────────────────────
 sources:
-  ats:          true   # Greenhouse US/EU / Lever / Ashby / Workable API polling
-  cutshort:     false  # Cutshort.io (public API unreliable — disabled)
-  instahyre:    true   # Instahyre API + scraping fallback
-  wellfound:    false  # DISABLED — blocks requests / shows verification wall
-  serper:       true   # Google search dork discovery via Serper.dev
-  hackernews:   true   # HN "Who is Hiring?" monthly thread
-  reddit:       false  # DISABLED — only returns people-looking-for-work posts
-  internshala:  true   # Internshala internships & fresher jobs (India #1)
-  yc:           true   # YC portfolio company job board
+  ats:            true   # Greenhouse US/EU / Lever / Ashby / Workable API polling
+  cutshort:       false  # Cutshort.io (public API unreliable — disabled)
+  instahyre:      true   # Instahyre API + scraping fallback
+  wellfound:      false  # DISABLED — blocks requests / shows verification wall
+  serper:         true   # Google search dork discovery via Serper.dev
+  hackernews:     true   # HN "Who is Hiring?" monthly thread
+  reddit:         false  # DISABLED — only returns people-looking-for-work posts
+  internshala:    true   # Internshala internships & fresher jobs (India #1)
+  yc:             true   # YC portfolio company job board
+  freshers_blogs: true   # Indian fresher blogs (RSS) + Cuvette.tech — high volume off-campus/internship listings
 
 
 candidate:

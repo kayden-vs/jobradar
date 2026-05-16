@@ -167,6 +167,23 @@ def check_title_relevance(title: str) -> tuple[bool, str]:
     """
     title_lower = title.lower()
 
+    # ── Block Glassdoor/job-board aggregate listing page titles ────────────
+    # Pattern: starts with a number followed by job-count phrasing
+    if re.match(r'^\d[\d,]* ', title_lower):
+        return True, "Aggregate listing page title (starts with count)"
+
+    # ── Block YC navigation category pages ────────────────────────────────
+    # Pattern: "Jobs in [City]", "[Category] Jobs", "Remote [Category] Jobs"
+    yc_nav_patterns = [
+        r'^jobs in ',              # "Jobs in Los Angeles"
+        r'^remote .+ jobs$',       # "Remote Design & UI/UX Jobs"
+        r'^software engineer jobs in ',  # "Software Engineer Jobs in Los Angeles"
+        r'^recruiting jobs in ',
+    ]
+    for pat in yc_nav_patterns:
+        if re.match(pat, title_lower):
+            return True, f"YC navigation/category page title: '{title}'"
+
     # Any of these in the title = keep it
     keep_signals = [
         "backend", "software", "engineer", "developer", "dev",
@@ -206,6 +223,71 @@ def check_no_description(job: dict) -> tuple[bool, str]:
     title = job.get("title", "").strip()
     if len(desc) == 0 and len(title) < 10:
         return True, "No description and no meaningful title"
+    return False, ""
+
+
+def check_rss_tags(job: dict) -> tuple[bool, str]:
+    """
+    Zero-cost tag-based filter for jobs from freshers_blogs RSS feeds.
+
+    WordPress blogs expose category tags in the RSS feed (entry.tags).
+    These are structured as lists in the job dict:
+      - experience_tags: tags mentioning "year", "0-1" (e.g. "0-2 Years Experience")
+      - batch_tags:      tags with batch year (e.g. "2026 Batch Off Campus")
+      - location_tags:   tags mentioning Indian cities or "remote"
+
+    Runs BEFORE experience keyword regex — pure list intersection, near-zero cost.
+    Only applies to freshers_blogs source jobs (others won't have these fields).
+    """
+    if not job.get("source", "").startswith("freshers_blogs"):
+        return False, ""  # Not a blog-source job; skip
+
+    # ── Experience tag check ───────────────────────────────────────────────
+    exp_tags = job.get("experience_tags", [])
+    if exp_tags:
+        # Tags are present: check if any signal fresher/entry-level
+        fresher_signals = ("fresher", "0-1", "0 - 1", "entry", "0-2", "0 - 2")
+        if not any(
+            any(sig in t.lower() for sig in fresher_signals)
+            for t in exp_tags
+        ):
+            return True, f"RSS exp tags suggest senior role: {exp_tags[:3]}"
+
+    # Also check role_tags for explicit "Experienced" tags (common on these blogs)
+    role_tags = job.get("role_tags", [])
+    role_tags_lower = [t.lower() for t in role_tags]
+    if "experienced jobs" in role_tags_lower or "experienced" in role_tags_lower:
+        # Only reject if there's no fresher tag to balance it
+        fresher_in_roles = any(
+            any(s in t for s in ("fresher", "fresh", "0-1", "intern"))
+            for t in role_tags_lower
+        )
+        if not fresher_in_roles:
+            return True, f"RSS role tags: experienced-only (no fresher tag)"
+
+    # ── Location tag check ───────────────────────────────────────────────
+    # These blogs are India-focused; non-India location tags = very unusual.
+    # Only reject when ALL location tags are explicit non-India locations.
+    loc_tags = job.get("location_tags", [])
+    if loc_tags:
+        india_signals = {
+            "bangalore", "bengaluru", "mumbai", "hyderabad", "delhi",
+            "pune", "chennai", "remote", "work from home", "wfh",
+            "pan india", "noida", "gurgaon", "india",
+        }
+        any_india = any(
+            any(city in t.lower() for city in india_signals)
+            for t in loc_tags
+        )
+        non_india_explicit = ["usa", "united states", "london", "singapore",
+                              "dubai", "canada", "australia", "uk", "europe"]
+        all_non_india = all(
+            any(loc in t.lower() for loc in non_india_explicit)
+            for t in loc_tags
+        )
+        if all_non_india and not any_india:
+            return True, f"RSS location tags: non-India only {loc_tags[:2]}"
+
     return False, ""
 
 
@@ -277,6 +359,7 @@ def prefilter(jobs: list[dict], profile: dict) -> list[dict]:
             check_is_old_post(job, profile),           # old post (smart date parsing)
             check_company_blacklist(company, profile), # Blacklisted company
             check_role_blacklist(title, profile),      # Blacklisted role type
+            check_rss_tags(job),                       # Zero-cost: RSS tag exp/location filter
             check_title_relevance(title),              # obvious non-tech role
             check_experience(description, title, profile),  # Overqualified
             check_location(description, title, profile),    # Wrong geography

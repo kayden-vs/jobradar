@@ -20,12 +20,12 @@ logging.basicConfig(
     format  = "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     handlers=[
         stream_handler,
-        logging.FileHandler("data/jobradar.log", mode="w", encoding="utf-8"),
+        logging.FileHandler("data/jobradar.log", mode="a", encoding="utf-8"),
     ]
 )
 logger = logging.getLogger("jobradar")
 
-from storage.db import init_db
+from storage.db import init_db, save_job
 from sources.ats import fetch_all_ats, load_companies
 from sources.cutshort import fetch_cutshort
 from sources.instahyre import fetch_instahyre
@@ -35,6 +35,7 @@ from sources.hackernews import fetch_hn_hiring
 from sources.reddit import fetch_reddit
 from sources.internshala import fetch_internshala
 from sources.yc import fetch_yc
+from sources.freshers_blogs import fetch_freshers_blogs
 from pipeline.dedup import deduplicate
 from pipeline.prefilter import prefilter, load_profile
 from pipeline.scorer import score_all
@@ -84,6 +85,10 @@ def run():
         logger.info("--- Fetching Internshala ---")
         raw_jobs.extend(fetch_internshala())
 
+    if source_enabled("freshers_blogs"):
+        logger.info("--- Fetching Indian Fresher Blogs (RSS + Cuvette) ---")
+        raw_jobs.extend(fetch_freshers_blogs())
+
     if source_enabled("yc"):
         logger.info("--- Fetching YC Jobs ---")
         raw_jobs.extend(fetch_yc())
@@ -117,6 +122,22 @@ def run():
 
     # --- AI SCORING ---
     urgent_jobs, digest_jobs, low_jobs = score_all(eligible_jobs)
+
+    # --- PERSIST SCORED JOBS ---
+    # Save every scored job to DB so dedup works across runs.
+    # Must happen BEFORE notifications so notified flag is set correctly.
+    all_scored = urgent_jobs + digest_jobs + low_jobs
+    for job in all_scored:
+        notified_flag = 1 if job in urgent_jobs else (2 if job in digest_jobs else 0)
+        save_job(
+            job,
+            score      = job.get("score", 0),
+            reason     = job.get("reason", ""),
+            highlights = ", ".join(job.get("highlights", [])),
+            red_flags  = ", ".join(job.get("red_flags",  [])),
+            notified   = notified_flag,
+        )
+    logger.info(f"Saved {len(all_scored)} scored jobs to DB")
 
     # --- NOTIFICATIONS ---
     if urgent_jobs:
