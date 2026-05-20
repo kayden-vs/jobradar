@@ -10,7 +10,7 @@ sources:
   instahyre:      true   # Instahyre API + scraping fallback
   wellfound:      false  # DISABLED — blocks requests / shows verification wall
   serper:         true   # Google search dork discovery via Serper.dev
-  hackernews:     true   # HN "Who is Hiring?" monthly thread
+  hackernews:     false   # HN "Who is Hiring?" monthly thread
   reddit:         false  # DISABLED — only returns people-looking-for-work posts
   internshala:    true   # Internshala internships & fresher jobs (India #1)
   yc:             true   # YC portfolio company job board
