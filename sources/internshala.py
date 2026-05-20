@@ -47,14 +47,14 @@ def fetch_internshala() -> list[dict]:
     Scrape Internshala job listing pages and return structured job dicts.
     Uses plain Fetcher (HTTP only) — Internshala is fully server-side rendered.
     """
-    fetcher = Fetcher()
+    # Use the class-level shared client (avoids deprecated per-call constructor)
     all_jobs: list[dict] = []
     seen: set[str] = set()
 
     for url in SEARCH_URLS:
         try:
             time.sleep(REQUEST_DELAY)
-            page = fetcher.get(url, timeout=20)
+            page = Fetcher.get(url, timeout=20)
 
             # Primary card selector — Internshala uses .individual_internship
             cards = page.css(".individual_internship")

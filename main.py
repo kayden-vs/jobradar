@@ -2,6 +2,7 @@ import logging
 import asyncio
 import os
 import sys
+from logging.handlers import RotatingFileHandler
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -14,13 +15,22 @@ stream_handler = logging.StreamHandler(stream=open(
     sys.stdout.fileno(), 'w', encoding='utf-8', closefd=False
 ))
 
+# Rotating log: max 1 MB per file, keep last 3 files (jobradar.log, .1, .2)
+# — prevents unbounded growth on AWS while retaining ~3 runs of history.
+file_handler = RotatingFileHandler(
+    "data/jobradar.log",
+    maxBytes   = 1 * 1024 * 1024,   # 1 MB
+    backupCount= 3,
+    encoding   = "utf-8",
+)
+
 # Configure logging
 logging.basicConfig(
     level   = logging.INFO,
     format  = "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     handlers=[
         stream_handler,
-        logging.FileHandler("data/jobradar.log", mode="a", encoding="utf-8"),
+        file_handler,
     ]
 )
 logger = logging.getLogger("jobradar")
@@ -112,13 +122,29 @@ def run():
     new_jobs = deduplicate(raw_jobs)
 
     # --- PRE-FILTER ---
-    # Drops ~80% of remaining jobs with zero AI cost
+    # Drops ~90% of remaining jobs with zero AI cost
     eligible_jobs = prefilter(new_jobs, profile)
 
     if not eligible_jobs:
         logger.info("No new eligible jobs after pre-filter. Done.")
         send_session_divider(total_raw=total_raw, passed=0, scored=0, urgent=0)
         return
+
+    # --- GLOBAL SCORER CAP ---
+    # Last-resort budget guard: if pre-filter still lets through more than
+    # max_ai_jobs_per_run jobs, keep only the freshest ones.
+    max_ai_jobs = profile.get("hard_reject", {}).get("max_ai_jobs_per_run", 80)
+    if len(eligible_jobs) > max_ai_jobs:
+        # Sort by posted_at descending (newest first); missing dates go to end
+        def _sort_key(j):
+            pa = j.get("posted_at", "")
+            return pa if pa else "0"
+        eligible_jobs.sort(key=_sort_key, reverse=True)
+        dropped = len(eligible_jobs) - max_ai_jobs
+        eligible_jobs = eligible_jobs[:max_ai_jobs]
+        logger.info(
+            f"Scorer cap: dropped {dropped} oldest jobs — sending {max_ai_jobs} to AI"
+        )
 
     # --- AI SCORING ---
     urgent_jobs, digest_jobs, low_jobs = score_all(eligible_jobs)

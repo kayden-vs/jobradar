@@ -184,7 +184,8 @@ def fetch_full_description(url: str) -> str:
     """
     from scrapling.fetchers import Fetcher
     try:
-        page = Fetcher().get(url, timeout=10)
+        # Use the class-level shared client (avoids deprecated per-call constructor)
+        page = Fetcher.get(url, timeout=10)
 
         # Try focused selectors first — avoids nav/sidebar/footer noise
         for selector in (".entry-content", ".post-content", ".article-content",

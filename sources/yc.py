@@ -83,7 +83,8 @@ _SKIP_TITLE = re.compile(
 def _fetch(url: str, timeout: int = 20):
     """Fetch a URL. Try plain Fetcher first, fall back to StealthyFetcher."""
     try:
-        page = Fetcher().get(url, timeout=timeout)
+        # Use the class-level shared client (avoids deprecated per-call constructor)
+        page = Fetcher.get(url, timeout=timeout)
         body = page.get_all_text(ignore_tags=["script", "style"])
         if len(body) > 300:
             return page

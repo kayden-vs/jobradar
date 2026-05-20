@@ -226,33 +226,68 @@ def check_has_meaningful_title(job: dict) -> tuple[bool, str]:
     return False, ""
 
 
-def check_title_relevance(title: str) -> tuple[bool, str]:
+# ATS sources that return structured, machine-readable job data.
+# Used to apply stricter filters that don't make sense for RSS/blog sources.
+_ATS_SOURCES = {"greenhouse", "greenhouse_eu", "lever", "ashby", "workable"}
+
+# Comprehensive tech-role positive signals for ATS title allow-listing.
+_ATS_TITLE_KEEP_SIGNALS = [
+    # Role types
+    "engineer", "developer", "dev", "programmer", "sde", "swe", "intern",
+    "fresher", "graduate", "trainee", "associate engineer",
+    # Specialisations
+    "backend", "back-end", "back end", "full stack", "fullstack", "full-stack",
+    "frontend", "front-end", "front end",  # keep FE in case they mention backend too
+    "platform", "infrastructure", "devops", "sre", "cloud", "systems",
+    "data engineer", "data engineering",
+    # Languages / frameworks
+    "golang", "go ", " go,", " go)", "python", "typescript", "javascript",
+    "java ", "java,", "java)", "kotlin", "rust", "c++", "scala",
+    "node", "node.js", "nodejs", "django", "fastapi", "spring",
+    # Generic tech signals
+    "api", "server", "microservice", "ml engineer", "software",
+]
+
+
+def check_title_relevance(title: str, source: str = "") -> tuple[bool, str]:
     """
-    Tighter positive filter — job title must contain at least one
-    signal word indicating it could be a backend/software role.
-    This blocks obvious non-tech roles (HR, marketing, sales, designer)
-    before they reach the AI scorer.
+    Positive / negative title filter before the AI scorer.
+
+    For ATS sources (greenhouse, lever, ashby, workable):
+      Uses strict POSITIVE allow-list only — if the title contains no recognised
+      tech signal, it is rejected.  This is safe because ATS titles are clean
+      and structured (no freeform blog text).
+
+    For all other sources (RSS blogs, HN, Serper, etc.):
+      Falls back to the original lenient logic — blocklist check only,
+      with a pass-by-default for ambiguous titles.
     """
     title_lower = title.lower()
 
     # ── Block Glassdoor/job-board aggregate listing page titles ────────────
-    # Pattern: starts with a number followed by job-count phrasing
     if re.match(r'^\d[\d,]* ', title_lower):
         return True, "Aggregate listing page title (starts with count)"
 
     # ── Block YC navigation category pages ────────────────────────────────
-    # Pattern: "Jobs in [City]", "[Category] Jobs", "Remote [Category] Jobs"
     yc_nav_patterns = [
-        r'^jobs in ',              # "Jobs in Los Angeles"
-        r'^remote .+ jobs$',       # "Remote Design & UI/UX Jobs"
-        r'^software engineer jobs in ',  # "Software Engineer Jobs in Los Angeles"
+        r'^jobs in ',
+        r'^remote .+ jobs$',
+        r'^software engineer jobs in ',
         r'^recruiting jobs in ',
     ]
     for pat in yc_nav_patterns:
         if re.match(pat, title_lower):
             return True, f"YC navigation/category page title: '{title}'"
 
-    # Any of these in the title = keep it
+    # ── ATS strict mode: positive allow-list only ─────────────────────────
+    if source in _ATS_SOURCES:
+        for signal in _ATS_TITLE_KEEP_SIGNALS:
+            if signal in title_lower:
+                return False, ""  # Tech signal found — keep
+        # No tech signal found — reject (safe because ATS titles are clean)
+        return True, f"ATS title has no tech signal: '{title}'"
+
+    # ── Non-ATS lenient mode (original logic) ────────────────────────────
     keep_signals = [
         "backend", "software", "engineer", "developer", "dev",
         "intern", "fresher", "full stack", "fullstack", "sde",
@@ -263,9 +298,8 @@ def check_title_relevance(title: str) -> tuple[bool, str]:
     ]
     for signal in keep_signals:
         if signal in title_lower:
-            return False, ""  # Keep
+            return False, ""
 
-    # Common non-tech roles that waste scoring budget
     reject_roles = [
         "sales", "marketing", "hr ", "human resources", "recruiter",
         "accountant", "finance", "business analyst", "graphic",
@@ -292,6 +326,64 @@ def check_no_description(job: dict) -> tuple[bool, str]:
     if len(desc) == 0 and len(title) < 10:
         return True, "No description and no meaningful title"
     return False, ""
+
+
+# Hard-reject location strings for ATS jobs.
+# ATS location fields are structured (e.g. "New York, NY") — safe to match.
+_ATS_REJECT_LOCATION_PATTERNS = re.compile(
+    r'\busa\b|\bunited states\b|\bus only\b|\bus-only\b'
+    r'|\bsan francisco\b|\bsf,\b|\bseattle\b|\bnew york\b|\bnyc\b'
+    r'|\blos angeles\b|\bchicago\b|\baustin\b|\bboston\b|\bdenver\b'
+    r'|\batlanta\b|\bdallas\b|\bphoenix\b|\bminneapolis\b'
+    r'|\bportland\b|\bsalt lake\b|\bsan jose\b|\bsan diego\b'
+    r'|\b[a-z]+,\s*[A-Z]{2}\b'  # city, STATE abbreviation (e.g. "Austin, TX")
+    r'|\bunited kingdom\b|\blondon\b|\buk only\b'
+    r'|\beurope\b|\bberlin\b|\bamsterdam\b|\bparis\b|\bstockholm\b'
+    r'|\bsingapore\b|\bdubai\b|\bcairo\b|\bsydney\b|\bmelbourne\b'
+    r'|\bcanada\b|\btoronto\b|\bvancouver\b',
+    re.IGNORECASE,
+)
+
+# Signals that the ATS location IS acceptable (India/Remote pass-through).
+_ATS_ACCEPT_LOCATION_PATTERNS = re.compile(
+    r'india|remote|bangalore|bengaluru|mumbai|hyderabad|delhi|pune'
+    r'|chennai|kolkata|noida|gurgaon|gurugram|work from home|wfh|pan india'
+    r'|not specified|worldwide|global|anywhere',
+    re.IGNORECASE,
+)
+
+
+def check_ats_location(job: dict) -> tuple[bool, str]:
+    """
+    Zero-cost location filter for ATS jobs only.
+
+    ATS sources (Greenhouse, Lever, Ashby, Workable) populate the `location`
+    field with clean, structured strings — safe to pattern-match without
+    reading the description.
+
+    Logic:
+      1. Skip non-ATS jobs (handled by check_location in description).
+      2. If the location contains an India/Remote accept signal → pass.
+      3. If the location contains a known non-India reject pattern → reject.
+      4. Ambiguous / empty locations → pass (benefit of the doubt).
+    """
+    source = job.get("source", "")
+    if source not in _ATS_SOURCES:
+        return False, ""  # Not an ATS job
+
+    location = job.get("location", "").strip()
+    if not location or location.lower() == "not specified":
+        return False, ""  # No location info — benefit of the doubt
+
+    # Accept signals take priority
+    if _ATS_ACCEPT_LOCATION_PATTERNS.search(location):
+        return False, ""
+
+    # Reject signals
+    if _ATS_REJECT_LOCATION_PATTERNS.search(location):
+        return True, f"ATS location outside India: '{location}'"
+
+    return False, ""  # Ambiguous — pass
 
 
 def check_rss_tags(job: dict) -> tuple[bool, str]:
@@ -408,30 +500,48 @@ def prefilter(jobs: list[dict], profile: dict) -> list[dict]:
     Hard filters run BEFORE the AI scorer to reduce API cost.
     Order matters — cheapest checks first, most expensive last.
 
-    Goal: push <30 jobs/day to the AI scorer to stay within Groq's
-    1,000 req/day and 500k token/day limits.
+    Filters applied in order:
+      1. Structural checks (title, description presence)
+      2. Age / expiry signals
+      3. Blacklists (company, role)
+      4. ATS-specific: strict title allow-list + location metadata
+      5. RSS tag checks (blog sources only)
+      6. General title relevance (non-ATS lenient mode)
+      7. Experience / location keyword scan in description
+      8. Per-company cap (ATS sources) — applied LAST so all other
+         filters have already narrowed the pool.
     """
+    hard_reject_cfg = profile.get("hard_reject", {})
+    ats_per_company_cap = hard_reject_cfg.get("ats_per_company_cap", 25)
 
     passed = []
+    company_counts: dict[str, int] = {}  # tracks ATS jobs per company
 
     for job in jobs:
         title       = job.get("title", "")
         company     = job.get("company", "")
         description = job.get("description", "")
+        source      = job.get("source", "")
 
         checks = [
-            # Cheapest first
+            # ── Structural (cheapest) ─────────────────────────────────────
             check_has_meaningful_title(job),           # no title = skip
             check_no_description(job),                 # no text = skip
             check_candidate_post(job),                 # Not a job posting
+            # ── Temporal ─────────────────────────────────────────────────
             check_is_old_post(job, profile),           # old post (smart date parsing)
             check_expiry_signals(job),                 # closed/deadline-passed signals in text
+            # ── Blacklists ────────────────────────────────────────────────
             check_company_blacklist(company, profile), # Blacklisted company
             check_role_blacklist(title, profile),      # Blacklisted role type
+            # ── ATS-specific cheap filters ────────────────────────────────
+            check_ats_location(job),                   # ATS: location field (US/UK/EU reject)
+            check_title_relevance(title, source),      # ATS: strict allow-list; non-ATS: lenient
+            # ── RSS tag checks ────────────────────────────────────────────
             check_rss_tags(job),                       # Zero-cost: RSS tag exp/location filter
-            check_title_relevance(title),              # obvious non-tech role
+            # ── Description keyword scans (slower) ───────────────────────
             check_experience(description, title, profile),  # Overqualified
-            check_location(description, title, profile),    # Wrong geography
+            check_location(description, title, profile),    # Wrong geography (description)
         ]
 
         rejected = False
@@ -441,8 +551,30 @@ def prefilter(jobs: list[dict], profile: dict) -> list[dict]:
                 rejected = True
                 break
 
-        if not rejected:
-            passed.append(job)
+        if rejected:
+            continue
+
+        # ── Per-company cap (ATS only) ────────────────────────────────────
+        # Applied last so all other filters have already reduced the pool.
+        if source in _ATS_SOURCES:
+            count = company_counts.get(company, 0)
+            if count >= ats_per_company_cap:
+                logger.debug(
+                    f"REJECTED '{title}' @ '{company}': company cap reached "
+                    f"({ats_per_company_cap} ATS jobs/company)"
+                )
+                continue
+            company_counts[company] = count + 1
+
+        passed.append(job)
+
+    # Summarise cap hits
+    capped_companies = [c for c, n in company_counts.items() if n >= ats_per_company_cap]
+    if capped_companies:
+        logger.info(
+            f"ATS company cap ({ats_per_company_cap}): capped companies — "
+            + ", ".join(capped_companies)
+        )
 
     logger.info(f"Pre-filter: {len(jobs)} jobs -> {len(passed)} passed (sent to AI scorer)")
     return passed

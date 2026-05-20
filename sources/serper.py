@@ -12,6 +12,52 @@ SERPER_URL = "https://google.serper.dev/search"
 # Free tier = 2,500/month. At 20/day × 30 days = 600/month. Well within limit.
 MAX_SERPER_CALLS = 20
 
+# Domains (and all their subdomains) that should never be scraped via Serper.
+# Either covered by dedicated scrapers, return 403/404, or are irrelevant.
+# Matching: a URL is blocked if any blocklist entry appears as a domain suffix
+# in the URL's netloc (e.g. "glassdoor.com" blocks "www.glassdoor.com").
+DOMAIN_BLOCKLIST: set[str] = {
+    # Job aggregators — already covered by dedicated sources or unscrapeable
+    "naukri.com",
+    "linkedin.com",
+    "indeed.com",
+    "internshala.com",      # covered by dedicated source
+    "hirist.tech",          # covered by dedicated source (if enabled)
+    "shine.com",
+    "timesjobs.com",
+    "monsterindia.com",
+    # Glassdoor — all country variants
+    "glassdoor.com",
+    "glassdoor.co.in",
+    "glassdoor.sg",
+    "glassdoor.co.uk",
+    "glassdoor.de",
+    "glassdoor.fr",
+    "glassdoor.ca",
+    # Other aggregators that return 403 or are redundant
+    "ziprecruiter.com",
+    "simplyhired.com",
+    "reddit.com",
+    "wellfound.com",
+    # Irrelevant / non-job content
+    "facebook.com",
+    "scribd.com",
+    "prosple.com",          # Southeast Asia
+    "bayt.com",             # Middle East
+    # BuiltIn city sites (US-specific, return 403 from India)
+    "builtin.com",
+    "builtinchicago.org",
+    "builtinsf.com",
+    "builtinboston.org",
+    "builtinnyc.com",
+    "builtinla.com",
+    "builtinseattle.com",
+    "builtinaustin.com",
+    # Consistently unreachable from the pipeline
+    "dailyremote.com",      # 403
+    "ambitionbox.com",      # 403
+}
+
 # --- Dork templates ---
 # Tuned for: Backend intern/fresher + Go OR TypeScript/Node.js + India/Remote
 # NOT just Golang — broad backend coverage now.
@@ -72,21 +118,32 @@ def search_serper(query: str) -> list[dict]:
         return []
 
 
+def _is_blocked_domain(url: str) -> bool:
+    """Return True if the URL's domain matches any entry in DOMAIN_BLOCKLIST.
+
+    Uses suffix-matching on the netloc so that e.g. 'glassdoor.com' blocks
+    both 'glassdoor.com' and 'www.glassdoor.com'.
+    """
+    from urllib.parse import urlparse
+    try:
+        netloc = urlparse(url).netloc.lower().lstrip("www.")
+    except Exception:
+        return False
+    return any(
+        netloc == blocked or netloc.endswith("." + blocked)
+        for blocked in DOMAIN_BLOCKLIST
+    )
+
+
 def is_job_related_url(url: str) -> bool:
     """Quick check to avoid wasting Scrapling fetches on irrelevant pages."""
-    skip_domains = ["naukri.com", "linkedin.com", "indeed.com", "glassdoor.com",
-                    "shine.com", "timesjobs.com", "monsterindia.com",
-                    "internshala.com",  # covered by dedicated source
-                    "hirist.tech",      # covered by dedicated source (if enabled)
-                    ]
-    job_signals  = ["careers", "jobs", "hiring", "apply", "forms.gle",
-                    "docs.google.com/forms", "greenhouse.io", "lever.co",
-                    "job", "opening", "position", "vacancy"]
+    if _is_blocked_domain(url):
+        return False  # On the blocklist — skip
 
-    url_lower = url.lower()
-    if any(d in url_lower for d in skip_domains):
-        return False   # Already covered by dedicated scrapers
-    return any(s in url_lower for s in job_signals)
+    job_signals = ["careers", "jobs", "hiring", "apply", "forms.gle",
+                   "docs.google.com/forms", "greenhouse.io", "lever.co",
+                   "job", "opening", "position", "vacancy"]
+    return any(s in url.lower() for s in job_signals)
 
 
 def extract_job_from_page(url: str, title_hint: str, company_hint: str) -> dict | None:
@@ -94,17 +151,38 @@ def extract_job_from_page(url: str, title_hint: str, company_hint: str) -> dict 
     Uses Scrapling to fetch a discovered URL and extract job details.
     - Plain Fetcher: fast HTTP-only, works for static pages
     - StealthyFetcher: headless browser, for JS-rendered / bot-protected pages
+
+    Hard timeout: 10 s per fetch to prevent the pipeline from hanging on slow
+    or unresponsive hosts. Non-200 responses are skipped immediately.
     """
     import time
     time.sleep(1)  # Rate limit: 1 req/sec
 
+    FETCH_TIMEOUT = 10  # seconds — hard cap per individual Scrapling call
+
     try:
-        page = Fetcher().get(url, timeout=15)
+        page = Fetcher.get(url, timeout=FETCH_TIMEOUT)
+
+        # Skip non-200 responses (paywalls, soft 404s, redirects to login, etc.)
+        status = getattr(page, "status", None)
+        if status is not None and status != 200:
+            logger.debug(f"Serper skip non-200 ({status}): {url}")
+            return None
+
         body_text = page.get_all_text(ignore_tags=["script", "style", "nav", "footer"])
 
         if len(body_text) < 200:
             time.sleep(2)
-            page = StealthyFetcher.fetch(url, headless=True, network_idle=True)
+            page = StealthyFetcher.fetch(
+                url,
+                headless=True,
+                network_idle=True,
+                timeout=FETCH_TIMEOUT * 1000,  # StealthyFetcher timeout is in ms
+            )
+            status = getattr(page, "status", None)
+            if status is not None and status != 200:
+                logger.debug(f"Serper skip non-200 stealthy ({status}): {url}")
+                return None
             body_text = page.get_all_text(ignore_tags=["script", "style", "nav", "footer"])
 
         # Google Form: just return title + description text

@@ -25,11 +25,11 @@ greenhouse:
   - twitch
   - airbnb
   - postman
-  - spacex
+  # - spacex
   - faire
   - duolingo
   - scaleai
-  - doordashmexico
+  # - doordashmexico
   - appian
   - blenheimchalcot
 
@@ -44,7 +44,7 @@ lever:
   - hevodata                        # ✅ verified — Hevo Data
   - stable-money1                   # ✅ verified — Stable Money
   - linkedin
-  - palantir
+  # - palantir
   - paytm
   - spotify
   - binance

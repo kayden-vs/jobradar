@@ -1,39 +1,40 @@
 #!/bin/bash
 
-# JobRadar daily runner — called by systemd on boot
-# Always shuts down the instance after, success or failure
-
 LOG_FILE="/home/ubuntu/jobradar/data/boot_run.log"
 ENV_FILE="/home/ubuntu/jobradar/.env"
+
+# ALWAYS shut down when this script exits, no matter what
+trap 'echo "Script exiting — shutting down instance: $(date)" >> "$LOG_FILE"; sudo shutdown -h now' EXIT
 
 echo "========================================" >> "$LOG_FILE"
 echo "Boot run started: $(date)" >> "$LOG_FILE"
 
-# Load env vars for Telegram token (for error notifications)
 set -a
 source "$ENV_FILE"
 set +a
 
-# Wait for network to be fully ready (EC2 boot can be slow)
-sleep 10
+sleep 10  # wait for network
 
-# Activate venv and run pipeline
 cd /home/ubuntu/jobradar
 source venv/bin/activate
 
-if python main.py >> "$LOG_FILE" 2>&1; then
-    echo "Pipeline completed successfully: $(date)" >> "$LOG_FILE"
-else
-    EXIT_CODE=$?
+# timeout 1500 = kill Python after 25 minutes if it hangs
+timeout 1500 python main.py >> "$LOG_FILE" 2>&1
+EXIT_CODE=$?
+
+if [ $EXIT_CODE -eq 124 ]; then
+    echo "PIPELINE TIMED OUT after 25 minutes: $(date)" >> "$LOG_FILE"
+    curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+        -d chat_id="${TELEGRAM_CHAT_ID}" \
+        -d text="⏰ JobRadar timed out after 25 min — instance shutting down. Check logs." \
+        > /dev/null 2>&1
+elif [ $EXIT_CODE -ne 0 ]; then
     echo "Pipeline FAILED with exit code $EXIT_CODE: $(date)" >> "$LOG_FILE"
-    
-    # Send failure alert to Telegram
     TAIL=$(tail -20 "$LOG_FILE")
     curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
         -d chat_id="${TELEGRAM_CHAT_ID}" \
-        -d text="❌ JobRadar failed (exit $EXIT_CODE). Last 20 log lines:%0A$(echo "$TAIL" | head -c 3000)" \
+        -d text="❌ JobRadar failed (exit $EXIT_CODE):%0A$(echo "$TAIL" | head -c 3000)" \
         > /dev/null 2>&1
 fi
 
-echo "Shutting down instance: $(date)" >> "$LOG_FILE"
-sudo shutdown -h now
+# trap handles shutdown
