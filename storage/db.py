@@ -1,11 +1,15 @@
 import sqlite3
 import hashlib
 import logging
+import os
 import re
 from datetime import datetime
 
-logger  = logging.getLogger(__name__)
-DB_PATH = "data/jobradar.db"
+logger = logging.getLogger(__name__)
+
+# DB_PATH is no longer a module-level constant.
+# All public functions accept `db_path: str` explicitly so every user
+# gets their own isolated SQLite file — dedup state never crosses users.
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -84,12 +88,18 @@ def make_url_id(job: dict) -> str:
 # DATABASE SETUP
 # ─────────────────────────────────────────────────────────────────
 
-def init_db():
-    """Create tables if they don't exist. Safe to call on every run."""
-    import os
-    os.makedirs("data", exist_ok=True)
+def init_db(db_path: str):
+    """Create tables if they don't exist. Safe to call on every run.
 
-    conn = sqlite3.connect(DB_PATH)
+    Args:
+        db_path: Path to the user's SQLite file, e.g. "data/rohit.db".
+                 The parent directory is created automatically.
+    """
+    db_dir = os.path.dirname(db_path)
+    if db_dir:
+        os.makedirs(db_dir, exist_ok=True)
+
+    conn = sqlite3.connect(db_path)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS jobs (
             id           TEXT PRIMARY KEY,   -- MD5 of normalised title+company+location
@@ -136,11 +146,16 @@ def init_db():
 # DEDUP QUERY
 # ─────────────────────────────────────────────────────────────────
 
-def is_duplicate(job: dict) -> bool:
-    """Returns True if this job was already seen (by title-hash OR URL)."""
+def is_duplicate(job: dict, db_path: str) -> bool:
+    """Returns True if this job was already seen (by title-hash OR URL).
+
+    Args:
+        job:     Job dict with at least title, company, location, url keys.
+        db_path: Path to the user's SQLite file.
+    """
     job_id = make_job_id(job)
     url_id = make_url_id(job)
-    conn   = sqlite3.connect(DB_PATH)
+    conn   = sqlite3.connect(db_path)
     # Primary: title-based hash
     row = conn.execute("SELECT id FROM jobs WHERE id=?", (job_id,)).fetchone()
     if row is None and url_id:
@@ -154,16 +169,20 @@ def is_duplicate(job: dict) -> bool:
 # WRITE / READ
 # ─────────────────────────────────────────────────────────────────
 
-def save_job(job: dict, score: int = 0, reason: str = "",
+def save_job(job: dict, db_path: str, score: int = 0, reason: str = "",
              highlights: str = "", red_flags: str = "", notified: int = 0):
     """Persist a scored job to the database.
 
     Uses INSERT OR IGNORE — re-inserting the same job never resets
     the `notified` flag, preventing duplicate Telegram alerts.
+
+    Args:
+        job:     Scored job dict.
+        db_path: Path to the user's SQLite file.
     """
     job_id = make_job_id(job)
     url_id = make_url_id(job)
-    conn   = sqlite3.connect(DB_PATH)
+    conn   = sqlite3.connect(db_path)
     conn.execute("""
         INSERT OR IGNORE INTO jobs
         (id, url_id, title, company, location, description, url, source,
@@ -190,9 +209,14 @@ def save_job(job: dict, score: int = 0, reason: str = "",
     conn.close()
 
 
-def get_jobs_by_score(min_score: int = 6) -> list[dict]:
-    """Retrieve jobs above a score threshold for digest."""
-    conn = sqlite3.connect(DB_PATH)
+def get_jobs_by_score(db_path: str, min_score: int = 6) -> list[dict]:
+    """Retrieve jobs above a score threshold for digest.
+
+    Args:
+        db_path:   Path to the user's SQLite file.
+        min_score: Minimum score to include (default 6).
+    """
+    conn = sqlite3.connect(db_path)
     rows = conn.execute("""
         SELECT title, company, location, url, salary, score, score_reason, highlights
         FROM jobs WHERE score >= ? AND notified = 0

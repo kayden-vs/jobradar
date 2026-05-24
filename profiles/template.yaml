@@ -1,0 +1,187 @@
+# profiles/template.yaml — Copy this file to add a new JobRadar user
+#
+# Usage:
+#   cp profiles/template.yaml profiles/<username>.yaml
+#   Fill in all fields marked with TODO.
+#   Add the user's TELEGRAM_CHAT_ID to their profile (get it from @userinfobot).
+#   Update EventBridge to invoke: python main.py --profile profiles/<username>.yaml
+#
+# NOTE: All profiles/*.yaml files are gitignored (personal info).
+#       Only this template.yaml is tracked in version control.
+
+# ─────────────────────────────────────────────────────────────────
+# NOTIFICATION
+# The bot token is shared (set in .env as TELEGRAM_BOT_TOKEN).
+# Each user gets their own chat_id — alerts go to their private chat.
+# To find a chat_id: have the user message the bot, then check
+#   https://api.telegram.org/bot<TOKEN>/getUpdates
+# or use @userinfobot on Telegram.
+# ─────────────────────────────────────────────────────────────────
+telegram_chat_id: ""   # TODO: fill in per user — e.g. "974951618"
+
+# ─────────────────────────────────────────────────────────────────
+# DATABASE
+# Each user gets their own SQLite file. This keeps deduplication
+# isolated — jobs seen by one user won't be skipped for another.
+# Convention: data/<username>.db
+# ─────────────────────────────────────────────────────────────────
+db_path: "data/<username>.db"   # TODO: replace <username>
+
+# ─────────────────────────────────────────────────────────────────
+# SOURCE TOGGLES
+# Set any source to false to skip it for this user.
+# Useful if a user prefers fewer sources to reduce noise.
+# ─────────────────────────────────────────────────────────────────
+sources:
+  ats:              true   # Greenhouse US/EU / Lever / Ashby / Workable API polling
+  cutshort:         false  # Cutshort.io (unreliable public API — leave disabled)
+  instahyre:        true   # Instahyre — good India fresher coverage
+  wellfound:        false  # Wellfound — blocks headless scrapers, leave disabled
+  serper:           true   # Google search dork discovery via Serper.dev
+  serper_max_calls: 10     # TODO: Serper credits per run. With 10 users × 10 calls × 30 days
+                           # = 3,000 credits/month. Free tier is 2,500 — keep at 8 or lower
+                           # if on a shared free-tier account.
+  hackernews:       false  # HN "Who is Hiring?" — mostly US/remote senior roles
+  reddit:           false  # Reddit — mostly candidate posts, low signal
+  internshala:      true   # Internshala — India's #1 internship platform
+  yc:               true   # YC portfolio company job board
+  freshers_blogs:   true   # Indian fresher blogs (RSS feeds) — high volume
+
+
+candidate:
+  name: ""          # TODO: Full name — shown in AI scoring prompt
+  email: ""         # TODO: Email address
+
+  # What the candidate is looking for
+  roles:
+    primary:        # Highest priority — AI gives these the most weight
+      - ""          # TODO: e.g. "Backend Engineering Intern"
+      - ""          # TODO: e.g. "Software Engineering Intern"
+    secondary:      # Also acceptable, slightly lower priority
+      - ""          # TODO: e.g. "Full Stack Intern"
+
+  # Experience level — CRITICAL for fresher filtering
+  experience:
+    years: 0                        # 0 = fresher/student; do not change for beta users
+    max_required: 1                 # HARD REJECT any job requiring more than N years
+    acceptable_labels:              # Title/description signals that are acceptable
+      - "fresher"
+      - "0-1 years"
+      - "intern"
+      - "entry level"
+      - "junior"
+      - "0 years"
+      - "trainee"
+
+  # Tech stack — list in order of proficiency
+  skills:
+    strong:         # Primary skills — AI gives bonus score for matches
+      - ""          # TODO: e.g. "Go", "Python", "TypeScript"
+    learning:       # Secondary skills — candidate is actively picking these up
+      - ""          # TODO: e.g. "Kubernetes", "AWS"
+
+  # Resume projects — used by AI for context-based scoring
+  # Each project should have: name, description, relevance_signal
+  projects:
+    - name: ""
+      description: ""   # TODO: 1-2 sentence description of what was built
+      relevance_signal: ""   # TODO: comma-separated keywords (tech, domain, patterns)
+
+  # Education
+  education:
+    degree: ""            # TODO: e.g. "B.Tech Computer Science"
+    institution: ""       # TODO: e.g. "IIT Delhi"
+    graduation: ""        # TODO: e.g. "May 2026" — used in AI prompt context
+
+  # Location preferences
+  location:
+    base: ""              # TODO: Current city, e.g. "Bangalore, India"
+    acceptable:           # AI will score India/Remote jobs higher
+      - "Remote"
+      - "Work from home"
+      - "Anywhere in India"
+      # Add specific cities the candidate is open to relocating to:
+      # - "Bangalore"
+      # - "Mumbai"
+      # - "Hyderabad"
+      # - "Delhi NCR"
+      # - "Pune"
+      # - "Chennai"
+    hard_reject:          # Jobs mentioning these locations → immediate reject
+      - "US only"
+      - "UK only"
+      - "Europe only"
+      - "On-site outside India"
+
+  # Industry preferences — drives AI bonus scoring
+  industries:
+    high_priority:        # +2 score bonus — industries where candidate's work is most relevant
+      - ""                # TODO: e.g. "Fintech", "SaaS", "Crypto"
+    medium_priority:      # +1 score bonus
+      - ""                # TODO: e.g. "Developer tools", "Infrastructure"
+
+  # Compensation floor — used in AI prompt context
+  salary:
+    min_stipend_inr: 0    # TODO: minimum monthly stipend for internships (INR)
+    min_ctc_lpa: 0.0      # TODO: minimum CTC for full-time fresher roles (LPA)
+
+# Hard reject rules — applied BEFORE AI scoring (zero token cost)
+hard_reject:
+  max_job_age_days: 45          # Reject jobs older than N days
+  ats_per_company_cap: 25       # Max ATS jobs per company per run (prevents big-co dominance)
+  max_ai_jobs_per_run: 80       # Hard ceiling: only the newest N jobs reach the AI scorer
+
+  experience_keywords:
+    # If ANY of these appear in the job description → immediate reject (no AI needed)
+    # Do not change for beta users — all are freshers
+    - "2+ years"
+    - "2 years experience"
+    - "3+ years"
+    - "4+ years"
+    - "5+ years"
+    - "6+ years"
+    - "7+ years"
+    - "8+ years"
+    - "9+ years"
+    - "10+ years"
+    - "minimum 2 years"
+    - "at least 2 years"
+    - "senior engineer"
+    - "senior developer"
+    - "lead engineer"
+    - "tech lead"
+    - "principal engineer"
+    - "staff engineer"
+
+  company_blacklist:
+    # Companies to never show to this user regardless of role
+    # Leave empty or add specific companies:
+    # - "TCS"
+    # - "Infosys"
+
+  role_blacklist:
+    # Role types to always reject — add/remove per user preference
+    - "Data Scientist"
+    - "Machine Learning Engineer"
+    - "ML Engineer"
+    - "DevOps Engineer"
+    - "QA Engineer"
+    - "Test Engineer"
+    - "Business Analyst"
+    - "Product Manager"
+    - "UI Designer"
+    - "UX Designer"
+    - "Frontend Developer"
+
+# Scoring weights — passed to AI prompt as context
+# Adjust multipliers per user's stack and priorities
+scoring_weights:
+  golang_mentioned: +2          # Bump if user is a Go specialist
+  typescript_mentioned: +1
+  backend_focused: +1
+  fintech_crypto_company: +2    # Bump if user targets fintech
+  remote_or_india: +1
+  project_stack_match: +2       # If user's projects are directly relevant
+  exact_role_match: +2
+  mentions_equity_esop: +0.5
+  unknown_company: -0.5         # Slight penalty for no-info companies

@@ -8,8 +8,10 @@ logger = logging.getLogger(__name__)
 SERPER_API_KEY = os.getenv("SERPER_API_KEY")
 SERPER_URL = "https://google.serper.dev/search"
 
-# Hard cap: never spend more than this many Serper API credits per run.
-# Free tier = 2,500/month. At 20/day × 30 days = 600/month. Well within limit.
+# Default cap: never spend more than this many Serper API credits per run.
+# Free tier = 2,500/month. With 10 users at 10 calls/day = 3,000/month — tight.
+# Override per-user via profile.yaml: sources.serper_max_calls: <N>
+# Default kept at 20 for single-user; multi-user deployments should set it lower.
 MAX_SERPER_CALLS = 20
 
 # Domains (and all their subdomains) that should never be scraped via Serper.
@@ -239,19 +241,26 @@ def _extract_salary(text: str) -> str:
     return ""
 
 
-def fetch_serper_jobs() -> list[dict]:
+def fetch_serper_jobs(max_calls: int = MAX_SERPER_CALLS) -> list[dict]:
     """
-    Main function: runs dork queries (capped at MAX_SERPER_CALLS) and
+    Main function: runs dork queries (capped at max_calls) and
     extracts the full job description from each discovered page.
 
+    Args:
+        max_calls: Maximum number of Serper API credits to spend this run.
+                   Defaults to MAX_SERPER_CALLS (20). Pass a smaller value
+                   from profile["sources"]["serper_max_calls"] for multi-user
+                   deployments to stay within the monthly free-tier budget.
+
     Serper budget: each query = 1 credit.
-    20 queries/day × 30 days = 600 credits/month (free tier: 2,500/month).
+    10 users × 10 calls/day × 30 days = 3,000 credits/month (free tier: 2,500).
+    Set serper_max_calls: 8 in profiles to stay comfortably within budget.
     """
     all_jobs = []
     seen_urls = set()
     queries_run = 0
 
-    for query in DORK_QUERIES[:MAX_SERPER_CALLS]:
+    for query in DORK_QUERIES[:max_calls]:
         results = search_serper(query)
         queries_run += 1
 

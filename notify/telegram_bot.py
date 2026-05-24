@@ -14,16 +14,17 @@ def _esc(text: str) -> str:
 
 logger = logging.getLogger(__name__)
 
+# Bot token is shared across all users — stays in .env.
+# chat_id is per-user — passed explicitly from profile["telegram_chat_id"].
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-TELEGRAM_CHAT_ID   = os.getenv("TELEGRAM_CHAT_ID")
 
 
 def format_job_message(job: dict) -> str:
     """Format a job into a rich Telegram message."""
-    
+
     score    = job.get("score", 0)
     urgency  = job.get("urgency", "low")
-    
+
     # Score emoji
     if score >= 9:
         score_emoji = "🔥🔥"
@@ -33,10 +34,10 @@ def format_job_message(job: dict) -> str:
         score_emoji = "⚡"
     else:
         score_emoji = "💡"
-    
+
     # Urgency label
     urgency_label = {"high": "Apply Today", "medium": "Apply Soon", "low": "Review"}.get(urgency, "Review")
-    
+
     highlights = job.get("highlights", "")
     highlight_lines = ""
     if highlights:
@@ -48,7 +49,7 @@ def format_job_message(job: dict) -> str:
     if red_flags and red_flags != "None":
         for rf in red_flags.split(", ")[:2]:
             red_flag_lines += f"  ⚠️ {_esc(rf)}\n"
-    
+
     salary_line = f"\n💰 {_esc(job.get('salary', ''))}" if job.get("salary") else ""
 
     msg = (
@@ -71,14 +72,14 @@ def format_job_message(job: dict) -> str:
     return msg
 
 
-async def send_job_alert(job: dict):
-    """Send a single job alert to Telegram."""
+async def _send_job_alert_async(job: dict, chat_id: str):
+    """Send a single job alert to a user's Telegram chat."""
     bot = Bot(token=TELEGRAM_BOT_TOKEN)
     message = format_job_message(job)
-    
+
     try:
         await bot.send_message(
-            chat_id    = TELEGRAM_CHAT_ID,
+            chat_id    = chat_id,
             text       = message,
             parse_mode = ParseMode.MARKDOWN_V2,
             disable_web_page_preview = True,
@@ -93,48 +94,35 @@ async def send_job_alert(job: dict):
                 f"Score: {job.get('score','?')}/10\n{job.get('url','')}"
             )
             await bot.send_message(
-                chat_id = TELEGRAM_CHAT_ID,
+                chat_id = chat_id,
                 text    = plain,
             )
         except Exception as e2:
             logger.error(f"Telegram plain-text fallback also failed: {e2}")
 
 
-async def send_run_summary(total_raw: int, passed_filter: int, scored: int, urgent: int):
-    """Send a short summary message after each run."""
-    bot = Bot(token=TELEGRAM_BOT_TOKEN)
-    
-    msg = (
-        f"🤖 *JobRadar Run Complete*\n"
-        f"📥 Raw jobs fetched: {_esc(total_raw)}\n"
-        f"🔍 Passed pre\\-filter: {_esc(passed_filter)}\n"
-        f"🧠 AI scored: {_esc(scored)}\n"
-        f"🔥 High\\-priority alerts: {_esc(urgent)}\n\n"
-        f"_Check digest for score 6\\-7 jobs_"
-    )
+def notify_urgent_jobs(urgent_jobs: list[dict], chat_id: str):
+    """Send instant alerts for all urgent (score 8+) jobs.
 
-    try:
-        await bot.send_message(
-            chat_id    = TELEGRAM_CHAT_ID,
-            text       = msg,
-            parse_mode = ParseMode.MARKDOWN_V2,
-        )
-    except Exception as e:
-        logger.error(f"Telegram summary send failed: {e}")
-
-
-def notify_urgent_jobs(urgent_jobs: list[dict]):
-    """Send instant alerts for all urgent (score 8+) jobs."""
+    Args:
+        urgent_jobs: Scored job dicts with score >= 8.
+        chat_id:     User's Telegram chat ID (from profile["telegram_chat_id"]).
+    """
     async def _send_all():
         for job in urgent_jobs:
-            await send_job_alert(job)
+            await _send_job_alert_async(job, chat_id)
             await asyncio.sleep(1)  # 1s gap between messages
 
     asyncio.run(_send_all())
 
 
-async def _send_session_divider_async(total_raw: int, passed: int,
-                                      scored: int, urgent: int):
+async def _send_session_divider_async(
+    total_raw: int,
+    passed: int,
+    scored: int,
+    urgent: int,
+    chat_id: str,
+):
     """Internal async impl for send_session_divider."""
     from datetime import datetime
     bot = Bot(token=TELEGRAM_BOT_TOKEN)
@@ -156,16 +144,25 @@ async def _send_session_divider_async(total_raw: int, passed: int,
     )
 
     try:
-        await bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=msg)
+        await bot.send_message(chat_id=chat_id, text=msg)
     except Exception as e:
         logger.error(f"Telegram session divider failed: {e}")
 
 
-def send_session_divider(total_raw: int, passed: int, scored: int, urgent: int):
-    """Send a visual end-of-session divider to Telegram.
+def send_session_divider(
+    total_raw: int,
+    passed: int,
+    scored: int,
+    urgent: int,
+    chat_id: str,
+):
+    """Send a visual end-of-session divider to a user's Telegram chat.
 
     Call this as the very last step of each pipeline run so it appears
     below all job alerts in the chat — making session boundaries obvious
     while scrolling.
+
+    Args:
+        chat_id: User's Telegram chat ID (from profile["telegram_chat_id"]).
     """
-    asyncio.run(_send_session_divider_async(total_raw, passed, scored, urgent))
+    asyncio.run(_send_session_divider_async(total_raw, passed, scored, urgent, chat_id))

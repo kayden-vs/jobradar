@@ -7,7 +7,13 @@ from dateutil import parser as dateutil_parser
 logger = logging.getLogger(__name__)
 
 
-def load_profile(path="profile.yaml") -> dict:
+def load_profile(path: str) -> dict:
+    """Load a user profile YAML from the given path.
+
+    The path must always be provided explicitly (e.g. "profiles/rohit.yaml").
+    No default is allowed — a missing path argument is a programming error,
+    not a recoverable runtime situation.
+    """
     with open(path) as f:
         return yaml.safe_load(f)
 

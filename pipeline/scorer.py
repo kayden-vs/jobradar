@@ -41,14 +41,29 @@ def _throttle():
     _last_call_ts = time.time()
 
 
-def load_profile(path="profile.yaml") -> dict:
-    with open(path) as f:
-        return yaml.safe_load(f)
-
-
 def build_scoring_prompt(job: dict, profile: dict) -> str:
-    candidate = profile["candidate"]
+    candidate  = profile["candidate"]
+    hard_reject = profile.get("hard_reject", {})
     today = datetime.now().strftime("%B %d, %Y")
+
+    # Education context — built from profile so every user gets the right details
+    edu        = candidate.get("education", {})
+    degree     = edu.get("degree", "Student")
+    graduation = edu.get("graduation", "upcoming")
+    exp_years  = candidate.get("experience", {}).get("years", 0)
+    max_exp    = candidate.get("experience", {}).get("max_required", 1)
+
+    # Compensation floor — from profile, not hardcoded
+    min_stipend = candidate.get("salary", {}).get("min_stipend_inr", 0)
+
+    # Age threshold — must match what prefilter already enforces
+    max_age_days = hard_reject.get("max_job_age_days", 45)
+
+    # Score rubric lines — built from the user's actual target roles and top skills
+    primary_roles = candidate["roles"]["primary"]
+    top_skills    = candidate["skills"]["strong"][:3]   # top 3 for concise rubric
+    rubric_perfect  = f"backend intern/fresher + India/Remote + {primary_roles[0]}"
+    rubric_strong   = f"{primary_roles[0]}, {', '.join(top_skills[:2])}, relevant company"
 
     # Build project context string from all projects in profile
     projects_text = "\n".join(
@@ -63,7 +78,7 @@ Today's Date: {today}
 ## CANDIDATE PROFILE
 
 Name: {candidate['name']}
-Current level: Fresher / 0 years experience (B.Tech student, graduating May 2027)
+Current level: Fresher / {exp_years} years experience ({degree}, graduating {graduation})
 
 Target roles (priority order):
 {chr(10).join('- ' + r for r in candidate['roles']['primary'])}
@@ -96,8 +111,8 @@ Job Description:
 ## SCORING RULES
 
 Score 1-10:
-- 10 = Perfect match (backend intern/fresher + India/Remote + strong stack match)
-- 8-9 = Very strong (backend intern, Go or TypeScript/Node.js, relevant company)
+- 10 = Perfect match ({rubric_perfect})
+- 8-9 = Very strong ({rubric_strong})
 - 6-7 = Good (backend adjacent, potentially relevant, worth applying)
 - 4-5 = Weak (tangentially related)
 - 1-3 = Not relevant
@@ -107,15 +122,15 @@ Mandatory rules — apply in this exact order, override scoring bonuses:
    application closed / hiring closed / recruitment closed / position filled /
    no longer accepting / deadline has passed / last date was [past date]—
    set score=1, apply_urgency="expired", expired=true. Do NOT apply any bonuses.
-2. Requires >1 year experience: score 1-2 (pre-filter miss, still log it)
+2. Requires >{max_exp} year experience: score 1-2 (pre-filter miss, still log it)
 3. Location is outside India AND in-office only: score=1
-4. Post is older than 2 months (check posted dates in description): score 1-3
+4. Post is older than {max_age_days} days (check posted dates in description): score 1-3
 5. Go/Golang mentioned: +2 to base score
 6. TypeScript or Node.js backend role: +1 to base score
 7. General backend focus (REST APIs, microservices, databases): +1 to base score
 8. Fintech/crypto/payments company: +2 to base score
 9. Any of candidate's projects are directly relevant: +2 to base score
-10. Internshala source with matching stipend (>=10000 INR/month): slight bonus
+10. Internshala source with matching stipend (>={min_stipend} INR/month): slight bonus
 
 TOKEN SAVING RULE — IMPORTANT:
 If score < 6: set reason="", highlights=[], red_flags=[] — do NOT write any text for these fields.
@@ -235,16 +250,24 @@ def score_job(job: dict, profile: dict) -> dict:
         return job
 
 
-def score_all(jobs: list[dict]) -> tuple[list[dict], list[dict], list[dict]]:
+def score_all(
+    jobs: list[dict],
+    profile: dict,
+    db_path: str,
+) -> tuple[list[dict], list[dict], list[dict]]:
     """
     Score all eligible jobs and split into buckets.
     Throttled to 1 req per 3 sec to stay under Groq's 30 req/min limit.
+
+    Args:
+        jobs:    Pre-filtered jobs to score.
+        profile: Loaded user profile dict (from main.py — not re-loaded here).
+        db_path: Path to the user's SQLite file for persisting scored jobs.
 
     Returns: (urgent_jobs [8-10], digest_jobs [6-7], low_jobs [<6])
     Expired jobs (urgency='expired' or expired=True) are excluded from all
     buckets and never notified or persisted.
     """
-    profile = load_profile()
     urgent  = []
     digest  = []
     low     = []
@@ -265,6 +288,7 @@ def score_all(jobs: list[dict]) -> tuple[list[dict], list[dict], list[dict]]:
         if scored_job["score"] >= 5:
             save_job(
                 scored_job,
+                db_path    = db_path,
                 score      = scored_job["score"],
                 reason     = scored_job.get("reason", ""),
                 highlights = scored_job.get("highlights", ""),

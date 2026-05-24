@@ -19,20 +19,22 @@ cd /home/ubuntu/jobradar
 source venv/bin/activate
 
 # timeout 1500 = kill Python after 25 minutes if it hangs
-timeout 1500 python main.py >> "$LOG_FILE" 2>&1
+timeout 1500 python main.py profiles/rohit.yaml >> "$LOG_FILE" 2>&1
 EXIT_CODE=$?
 
 if [ $EXIT_CODE -eq 124 ]; then
     echo "PIPELINE TIMED OUT after 25 minutes: $(date)" >> "$LOG_FILE"
+    CHAT_ID=$(python -c "import yaml; p=yaml.safe_load(open('profiles/rohit.yaml')); print(p.get('telegram_chat_id',''))" 2>/dev/null)
     curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
-        -d chat_id="${TELEGRAM_CHAT_ID}" \
+        -d chat_id="${CHAT_ID}" \
         -d text="⏰ JobRadar timed out after 25 min — instance shutting down. Check logs." \
         > /dev/null 2>&1
 elif [ $EXIT_CODE -ne 0 ]; then
     echo "Pipeline FAILED with exit code $EXIT_CODE: $(date)" >> "$LOG_FILE"
+    CHAT_ID=$(python -c "import yaml; p=yaml.safe_load(open('profiles/rohit.yaml')); print(p.get('telegram_chat_id',''))" 2>/dev/null)
     TAIL=$(tail -20 "$LOG_FILE")
     curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
-        -d chat_id="${TELEGRAM_CHAT_ID}" \
+        -d chat_id="${CHAT_ID}" \
         -d text="❌ JobRadar failed (exit $EXIT_CODE):%0A$(echo "$TAIL" | head -c 3000)" \
         > /dev/null 2>&1
 fi

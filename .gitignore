@@ -4,3 +4,11 @@ __pycache__/
 */__pycache__/
 data/
 *.pem
+
+# Per-user profiles contain personal info (name, email, chat_id) — do not commit.
+# Only the template is tracked.
+profiles/*.yaml
+!profiles/template.yaml
+
+# Legacy single-user profile — superseded by profiles/rohit.yaml
+profile.yaml
