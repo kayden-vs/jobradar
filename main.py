@@ -49,7 +49,7 @@ from sources.freshers_blogs import fetch_freshers_blogs
 from pipeline.dedup import deduplicate
 from pipeline.prefilter import prefilter, load_profile
 from pipeline.scorer import score_all
-from notify.telegram_bot import notify_urgent_jobs, send_session_divider
+from notify.telegram_bot import notify_urgent_jobs, send_run_summary
 
 
 def run():
@@ -127,7 +127,7 @@ def run():
 
     if not eligible_jobs:
         logger.info("No new eligible jobs after pre-filter. Done.")
-        send_session_divider(total_raw=total_raw, passed=0, scored=0, urgent=0)
+        asyncio.run(send_run_summary(total_raw=total_raw, passed_filter=0, scored=0, urgent=0))
         return
 
     # --- GLOBAL SCORER CAP ---
@@ -157,12 +157,12 @@ def run():
     # Session-end divider — always the last message, carries stats for the run.
     # Sent even when urgent=0 so there's always a visible session boundary.
     scored_count = len(urgent_jobs) + len(digest_jobs) + len(low_jobs)
-    send_session_divider(
-        total_raw = total_raw,
-        passed    = len(eligible_jobs),
-        scored    = scored_count,
-        urgent    = len(urgent_jobs),
-    )
+    asyncio.run(send_run_summary(
+        total_raw    = total_raw,
+        passed_filter = len(eligible_jobs),
+        scored       = scored_count,
+        urgent       = len(urgent_jobs),
+    ))
 
     logger.info("Pipeline complete.")
     logger.info(f"Summary: {total_raw} raw -> {len(new_jobs)} new -> {len(eligible_jobs)} eligible -> {len(urgent_jobs)} urgent")
