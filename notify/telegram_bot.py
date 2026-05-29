@@ -102,15 +102,26 @@ async def send_job_alert(job: dict):
 
 async def send_run_summary(total_raw: int, passed_filter: int, scored: int, urgent: int):
     """Send a short summary message after each run."""
+    from datetime import datetime
+
     bot = Bot(token=TELEGRAM_BOT_TOKEN)
-    
+
+    now = datetime.now()
+    date_str = now.strftime("%-d %b")        # e.g. "29 May"
+    time_str = now.strftime("%H:%M")         # e.g. "19:52"
+
+    digest = scored - urgent  # non-urgent scored jobs to review
+    urgent_line = (
+        "✅ No urgent alerts today"
+        if urgent == 0
+        else f"🚨 Scroll up — {urgent} high\\-priority job\\(s\\) above\\!"
+    )
+
     msg = (
-        f"🤖 *JobRadar Run Complete*\n"
-        f"📥 Raw jobs fetched: {_esc(total_raw)}\n"
-        f"🔍 Passed pre\\-filter: {_esc(passed_filter)}\n"
-        f"🧠 AI scored: {_esc(scored)}\n"
-        f"🔥 High\\-priority alerts: {_esc(urgent)}\n\n"
-        f"_Check digest for score 6\\-7 jobs_"
+        f"🔥 {_esc(urgent)} urgent · {_esc(digest)} to review — JobRadar {_esc(date_str)}\n"
+        f"📥 {_esc(total_raw)} fetched → {_esc(passed_filter)} filtered → {_esc(scored)} scored\n"
+        f"{urgent_line}\n"
+        f"🕐 {_esc(time_str)} IST"
     )
 
     try:
@@ -131,41 +142,3 @@ def notify_urgent_jobs(urgent_jobs: list[dict]):
             await asyncio.sleep(1)  # 1s gap between messages
 
     asyncio.run(_send_all())
-
-
-async def _send_session_divider_async(total_raw: int, passed: int,
-                                      scored: int, urgent: int):
-    """Internal async impl for send_session_divider."""
-    from datetime import datetime
-    bot = Bot(token=TELEGRAM_BOT_TOKEN)
-
-    now = datetime.now().strftime("%d %b %Y  %H:%M")
-
-    # Build a visually striking block that's impossible to miss while scrolling
-    msg = (
-        "━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"🔚  SESSION COMPLETE\n"
-        f"🤖  JobRadar  ·  {now}\n"
-        "━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"📥  {total_raw} fetched\n"
-        f"🔍  {passed} passed filter\n"
-        f"🧠  {scored} AI scored\n"
-        f"🔥  {urgent} urgent alert{'s' if urgent != 1 else ''} sent\n"
-        "━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        "⬆️  Scroll up for this session's jobs"
-    )
-
-    try:
-        await bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=msg)
-    except Exception as e:
-        logger.error(f"Telegram session divider failed: {e}")
-
-
-def send_session_divider(total_raw: int, passed: int, scored: int, urgent: int):
-    """Send a visual end-of-session divider to Telegram.
-
-    Call this as the very last step of each pipeline run so it appears
-    below all job alerts in the chat — making session boundaries obvious
-    while scrolling.
-    """
-    asyncio.run(_send_session_divider_async(total_raw, passed, scored, urgent))
