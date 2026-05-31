@@ -102,11 +102,13 @@ async def send_job_alert(job: dict):
 
 async def send_run_summary(total_raw: int, passed_filter: int, scored: int, urgent: int):
     """Send a short summary message after each run."""
-    from datetime import datetime
+    from datetime import datetime, timezone, timedelta
 
     bot = Bot(token=TELEGRAM_BOT_TOKEN)
 
-    now = datetime.now()
+    IST = timezone(timedelta(hours=5, minutes=30))
+    now = datetime.now(IST)
+
     date_str = now.strftime("%-d %b")        # e.g. "29 May"
     time_str = now.strftime("%H:%M")         # e.g. "19:52"
 
