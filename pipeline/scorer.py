@@ -46,6 +46,51 @@ def load_profile(path="profile.yaml") -> dict:
         return yaml.safe_load(f)
 
 
+# ─────────────────────────────────────────────────────────────────
+# FEW-SHOT CALIBRATION EXAMPLES
+#
+# Purpose: anchor the 1–10 scale so Llama-4-Scout doesn't drift.
+# Without anchors, the model tends to compress scores toward the
+# middle (4–7) or inflate them unpredictably run-to-run.
+#
+# Two calibration examples are injected into the SYSTEM prompt
+# (not the user message) so they are cached by Groq and don't
+# count against per-request token budget for each job scored.
+#
+# Chosen to bracket the useful range:
+#   9 = nearly perfect match for Rohit
+#   3 = looks like a tech job but is actually a bad fit
+# ─────────────────────────────────────────────────────────────────
+_FEW_SHOT_EXAMPLES = """
+## CALIBRATION EXAMPLES (use these to anchor your scoring scale)
+
+### Example A — Score 9 (near-perfect match)
+Job: "Backend Intern – Go/Golang" at Koinbase (crypto exchange), Bangalore/Remote
+Description excerpt: "We're building a high-throughput order matching engine in Go.
+  You'll work on our gRPC microservices, PostgreSQL schemas, and Redis caching layer.
+  0–1 years experience. Stipend: ₹25,000/month. Apply before July 2026."
+→ Correct score: 9
+→ Reasoning: Golang + gRPC + PostgreSQL + Redis = exact stack match. Crypto/fintech
+  domain matches Zaraba project signal. Remote/Bangalore is acceptable. Fresher role.
+  Stipend above minimum. Only reason it isn't 10: no mention of equity/ESOPs and
+  company is less well-known.
+→ apply_urgency: "high"
+→ apply_angle: "Lead with the Zaraba crypto exchange — matching engine and gRPC
+  architecture are directly relevant. Mention fixed-point arithmetic and Redis."
+
+### Example B — Score 3 (tech role, poor fit)
+Job: "Junior DevOps Engineer" at TechCorp, Pune (on-site)
+Description excerpt: "2+ years with AWS, Terraform, Jenkins CI/CD pipelines required.
+  Must have experience managing production Kubernetes clusters."
+→ Correct score: 3
+→ Reasoning: DevOps is on the role blacklist. Requires 2+ years experience (hard
+  reject signal). On-site Pune is borderline acceptable but the experience requirement
+  alone makes this unfit. Terraform/Jenkins are not in the candidate's stack.
+→ apply_urgency: "low"
+→ apply_angle: "" (empty — not worth applying)
+"""
+
+
 def build_scoring_prompt(job: dict, profile: dict) -> str:
     candidate = profile["candidate"]
     today = datetime.now().strftime("%B %d, %Y")
@@ -55,6 +100,8 @@ def build_scoring_prompt(job: dict, profile: dict) -> str:
         f"- {p['name']}: {p['description']} | Signals: {p['relevance_signal']}"
         for p in candidate.get('projects', [])
     )
+
+    high_score_fields = """  "apply_angle": "<one sentence: what should the candidate emphasize in their cover note / cold email? IF score>=8 ONLY, else empty string>","""
 
     return f"""You are a job relevance scorer for a specific candidate. Score how relevant a job posting is for this person.
 
@@ -95,7 +142,7 @@ Job Description:
 
 ## SCORING RULES
 
-Score 1-10:
+Score 1-10 (use the calibration examples in the system prompt as anchors):
 - 10 = Perfect match (backend intern/fresher + India/Remote + strong stack match)
 - 8-9 = Very strong (backend intern, Go or TypeScript/Node.js, relevant company)
 - 6-7 = Good (backend adjacent, potentially relevant, worth applying)
@@ -117,9 +164,11 @@ Mandatory rules — apply in this exact order, override scoring bonuses:
 9. Any of candidate's projects are directly relevant: +2 to base score
 10. Internshala source with matching stipend (>=10000 INR/month): slight bonus
 
-TOKEN SAVING RULE — IMPORTANT:
-If score < 6: set reason="", highlights=[], red_flags=[] — do NOT write any text for these fields.
-If score >= 6: fill in reason, highlights, and red_flags normally.
+TOKEN SAVING RULES — IMPORTANT:
+- If score < 6: set reason="", highlights=[], red_flags=[], apply_angle="" — write nothing for these fields.
+- If score >= 6: fill in reason, highlights, and red_flags normally.
+- If score >= 8: ALSO fill in apply_angle with one actionable sentence about what to emphasise in the cover note or cold email to this company. Reference specific projects/skills where possible.
+- If score < 8: apply_angle must be an empty string "".
 
 Return ONLY a valid JSON object, no markdown fences:
 {{
@@ -128,6 +177,7 @@ Return ONLY a valid JSON object, no markdown fences:
   "reason": "<2-3 sentences IF score>=6, else empty string>",
   "highlights": ["<reason 1>", "<reason 2>", "<reason 3> — IF score>=6, else []"],
   "red_flags": ["<issue if any> — IF score>=6, else []"],
+{high_score_fields}
   "golang_match": <true/false>,
   "fintech_match": <true/false>,
   "apply_urgency": "<high/medium/low/expired>",
@@ -136,7 +186,7 @@ Return ONLY a valid JSON object, no markdown fences:
 
 
 def score_job(job: dict, profile: dict) -> dict:
-    """Score a single job with Groq llama-3.3-70b-versatile."""
+    """Score a single job with Groq llama-4-scout."""
 
     # ── Lazy description fetch ────────────────────────────────────────────────
     # freshers_blogs sources return empty/partial descriptions intentionally
@@ -174,12 +224,13 @@ def score_job(job: dict, profile: dict) -> dict:
             f"Pre-Groq expiry detected for '{job.get('title','?')}': "
             f"'{expiry_signal.group(0).strip()[:60]}' — skipping scorer"
         )
-        job["score"]    = 1
-        job["expired"]  = True
-        job["reason"]   = ""
-        job["highlights"] = ""
-        job["red_flags"]  = ""
-        job["urgency"]    = "expired"
+        job["score"]       = 1
+        job["expired"]     = True
+        job["reason"]      = ""
+        job["highlights"]  = ""
+        job["red_flags"]   = ""
+        job["apply_angle"] = ""
+        job["urgency"]     = "expired"
         return job
 
     _throttle()  # Respect rate limit before every call
@@ -194,7 +245,13 @@ def score_job(job: dict, profile: dict) -> dict:
             messages=[
                 {
                     "role": "system",
-                    "content": "You are a precise job relevance scorer. Always respond with valid JSON only, no markdown.",
+                    # Few-shot examples live in the system prompt so they anchor
+                    # the score scale without burning per-job user-message tokens.
+                    "content": (
+                        "You are a precise job relevance scorer. "
+                        "Always respond with valid JSON only, no markdown.\n"
+                        + _FEW_SHOT_EXAMPLES
+                    ),
                 },
                 {
                     "role": "user",
@@ -202,7 +259,7 @@ def score_job(job: dict, profile: dict) -> dict:
                 },
             ],
             temperature=0.1,   # Low temperature for consistent scoring
-            max_tokens=512,
+            max_tokens=600,    # +88 vs old 512 to accommodate apply_angle field
         )
 
         text = response.choices[0].message.content.strip()
@@ -215,40 +272,56 @@ def score_job(job: dict, profile: dict) -> dict:
 
         result = json.loads(text)
 
-        job["score"]      = int(result.get("score", 0))
-        job["expired"]    = bool(result.get("expired", False))
-        job["reason"]     = result.get("reason", "")
-        job["highlights"] = ", ".join(result.get("highlights", []))
-        job["red_flags"]  = ", ".join(result.get("red_flags", []))
-        job["urgency"]    = result.get("apply_urgency", "low")
+        job["score"]       = int(result.get("score", 0))
+        job["expired"]     = bool(result.get("expired", False))
+        job["reason"]      = result.get("reason", "")
+        job["highlights"]  = ", ".join(result.get("highlights", []))
+        job["red_flags"]   = ", ".join(result.get("red_flags", []))
+        job["apply_angle"] = result.get("apply_angle", "")  # only populated for score>=8
+        job["urgency"]     = result.get("apply_urgency", "low")
 
-        logger.info(f"Scored: {job['title']} @ {job['company']} -> {job['score']}/10 [{job['urgency']}]")
+        logger.info(
+            f"Scored: {job['title']} @ {job['company']} -> {job['score']}/10 [{job['urgency']}]"
+            + (f" | angle: {job['apply_angle'][:60]}" if job.get("apply_angle") else "")
+        )
         return job
 
     except Exception as e:
         logger.error(f"Groq scoring failed for {job.get('title', '?')}: {e}")
-        job["score"]      = -1
-        job["reason"]     = f"Scoring error: {e}"
-        job["highlights"] = ""
-        job["red_flags"]  = ""
-        job["urgency"]    = "low"
+        job["score"]       = -1
+        job["reason"]      = f"Scoring error: {e}"
+        job["highlights"]  = ""
+        job["red_flags"]   = ""
+        job["apply_angle"] = ""
+        job["urgency"]     = "low"
         return job
 
 
-def score_all(jobs: list[dict]) -> tuple[list[dict], list[dict], list[dict]]:
+def score_all(
+    jobs: list[dict],
+    profile: dict | None = None,
+    db_path: str | None = None,
+) -> tuple[list[dict], list[dict], list[dict]]:
     """
     Score all eligible jobs and split into buckets.
     Throttled to 1 req per 3 sec to stay under Groq's 30 req/min limit.
+
+    Args:
+        jobs:     Pre-filtered job dicts to score.
+        profile:  Loaded profile dict.  If None, loaded from default path.
+        db_path:  Path to the SQLite database.  If None, uses db.py default.
 
     Returns: (urgent_jobs [8-10], digest_jobs [6-7], low_jobs [<6])
     Expired jobs (urgency='expired' or expired=True) are excluded from all
     buckets and never notified or persisted.
     """
-    profile = load_profile()
-    urgent  = []
-    digest  = []
-    low     = []
-    expired_count = 0
+    if profile is None:
+        profile = load_profile()
+
+    urgent        : list[dict] = []
+    digest        : list[dict] = []
+    low           : list[dict] = []
+    expired_count : int        = 0
 
     logger.info(f"Scoring {len(jobs)} eligible jobs with Groq ({MODEL})")
 
@@ -261,14 +334,16 @@ def score_all(jobs: list[dict]) -> tuple[list[dict], list[dict], list[dict]]:
             logger.debug(f"Dropping expired job: {scored_job.get('title','?')}")
             continue
 
-        # Only persist jobs worth reviewing
+        # Persist jobs worth reviewing (score >= 5)
         if scored_job["score"] >= 5:
             save_job(
                 scored_job,
-                score      = scored_job["score"],
-                reason     = scored_job.get("reason", ""),
-                highlights = scored_job.get("highlights", ""),
-                red_flags  = scored_job.get("red_flags", ""),
+                score       = scored_job["score"],
+                reason      = scored_job.get("reason", ""),
+                highlights  = scored_job.get("highlights", ""),
+                red_flags   = scored_job.get("red_flags", ""),
+                apply_angle = scored_job.get("apply_angle", ""),
+                db_path     = db_path,
             )
 
         if scored_job["score"] >= 8:
