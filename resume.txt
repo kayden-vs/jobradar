@@ -1,35 +1,46 @@
 Rohit Kumar Roy
- +91 8653124170 | # connect.rohitroy@gmail.com | ï LinkedIn | § Github
++91 8653124170 | connect.rohitroy@gmail.com | Portfolio | LinkedIn | Github
 Education
-Techno Main Salt Lake Kolkata, WB
-Bachelor of Technology in Computer Science and Engineering (IoT) Aug. 2023 – May 2027
+Techno Main Salt Lake
+Bachelor of Technology in Computer Science and Engineering (IoT)
+Kolkata, WB
+Aug. 2023– May 2027
 Technical Skills
-Languages: Go,TypeScript, Python
+Languages: Go, TypeScript, Python
 Backend & Systems: gRPC, Protobuf, REST APIs, Microservices, Concurrency (goroutines, channels), System Design
-Databases & Storage: PostgreSQL, Redis, MySQL
-DevOps & Infrastructure: Docker, CI/CD (GitHub Actions)
+Databases & Storage: PostgreSQL, Redis, Drizzle, MySQL
+DevOps & Infrastructure: Docker, CI/CD (GitHub Actions), AWS
 Observability & Testing: Prometheus, Unit & Integration Testing, Benchmarking
 Tools & Systems: Linux, Git
+Experience
+Backend Developer Intern | Journalyst
+Early-stage fintech startup building an AI-powered trade journal with multi-broker integration
 Projects
-Zaraba § GitHub  Live | Go, gRPC, Protobuf, Templ Jan 2026 – Mar 2026
+May 2026– Present
+Remote
+Zaraba GitHub Live | Go, gRPC, Protobuf, Templ
 Crypto exchange application with real-time trading, order matching, and wallet systems
+Jan 2026– Mar 2026
 • Built a real-time trading system that matches buy and sell orders and maintains an in-memory orderbook.
 • Designed a gRPC-based architecture separating API, trading logic, and services for markets, trades, and wallets.
 • Used fixed-point arithmetic for precise financial calculations, eliminating floating-point inaccuracies in trade
 execution.
-CipherBin § GitHub  Live | Go, PostgreSQL, Templ, Chi Sept 2025
-Ephemeral code-sharing service where snippets auto-expire after a set time
-• Developed a full-stack Go application using the Templ engine for type-safe, server-side rendered HTML and a
-modular PostgreSQL backend engineered with a Clean Architecture pattern.
-• Implemented session-based authentication, input sanitization, and secure database operations using prepared
-statements.
-Sentinel-Proxy § GitHub | Go, gRPC (streaming), Redis Mar 2026
+JobRadar GitHub | Python, Groq AI, SQLite, Telegram API
+Automated job discovery pipeline that aggregates 10+ sources, scores matches with AI, and delivers alerts via Telegram
+May 2026
+• Built a multi-source aggregation pipeline (10+ sources including ATS APIs, YC, Internshala, HackerNews) with a
+rule-based prefilter eliminating ˜90% of irrelevant listings before AI scoring, keeping Groq API usage minimal.
+• Deployed on AWS EC2 with EventBridge Scheduler to boot the instance once daily, run the pipeline as a systemd
+service, and auto-shutdown on completion, reducing compute costs by ˜99%.
+Sentinel-Proxy GitHub | Go, gRPC (streaming), Redis
 Reverse proxy that monitors outgoing traffic to detect suspicious data transfer in real time
+Mar 2026
 • Built a streaming pipeline that inspects traffic chunks and tracks behavior patterns using Redis to identify potential
 data exfiltration.
 • Implemented adaptive threshold-based detection to flag abnormal data transfer while minimizing false positives.
 Achievements
-Finalist — DoubleSlash 4.0, Jadavpur University Mar 2026
+Finalist — DoubleSlash 4.0, Jadavpur University
 • Finalist in the Cybersecurity track; built Sentinel-Proxy, a real-time traffic monitoring system.
 Competitive Programming
-• LeetCode: 170+ problems solved with a 60-day consistent solving streak.
+Mar 2026
+• LeetCode: 200+ problems solved with a 60-day consistent solving streak.
