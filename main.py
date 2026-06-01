@@ -46,6 +46,7 @@ from sources.reddit import fetch_reddit
 from sources.internshala import fetch_internshala
 from sources.yc import fetch_yc
 from sources.freshers_blogs import fetch_freshers_blogs
+from sources.naukri import fetch_naukri
 from pipeline.dedup import deduplicate
 from pipeline.prefilter import prefilter, load_profile
 from pipeline.scorer import score_all
@@ -114,6 +115,10 @@ def run():
     if source_enabled("reddit"):
         logger.info("--- Fetching Reddit ---")
         raw_jobs.extend(fetch_reddit())
+
+    if source_enabled("naukri"):
+        logger.info("--- Fetching Naukri.com ---")
+        raw_jobs.extend(fetch_naukri(profile))
 
     total_raw = len(raw_jobs)
     logger.info(f"Total raw jobs from all sources: {total_raw}")
