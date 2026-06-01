@@ -33,7 +33,7 @@ import re
 import threading
 import time
 
-from scrapling.fetchers import StealthyFetcher
+from sources.utils import is_playwright_available
 
 logger = logging.getLogger(__name__)
 
@@ -225,6 +225,7 @@ def _fetch_listing_page(
     logger.debug(f"Hirist: fetching listing -- {full_url}")
 
     try:
+        from scrapling.fetchers import StealthyFetcher
         page_resp = StealthyFetcher.fetch(
             full_url,
             headless=True,
@@ -357,6 +358,7 @@ def _fetch_job_detail(job_url: str) -> dict:
     logger.debug(f"Hirist: fetching detail -- {job_url}")
 
     try:
+        from scrapling.fetchers import StealthyFetcher
         page_resp = StealthyFetcher.fetch(
             job_url,
             headless=True,
@@ -429,6 +431,10 @@ def fetch_hirist(profile: dict | None = None) -> list[dict]:
     Returns:
       List of job dicts conforming to the standard pipeline schema.
     """
+    if not is_playwright_available():
+        logger.info("Hirist: Playwright is unavailable (missing libcups), skipping Hirist.")
+        return []
+
     hirist_cfg    = (profile or {}).get("hirist", {})
 
     keywords      = hirist_cfg.get("keywords") or _DEFAULT_KEYWORDS

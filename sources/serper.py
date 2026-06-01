@@ -36,7 +36,7 @@ from itertools import product
 from urllib.parse import urlparse
 
 import requests
-from scrapling.fetchers import StealthyFetcher, Fetcher
+from scrapling.fetchers import Fetcher
 
 logger = logging.getLogger(__name__)
 
@@ -547,17 +547,23 @@ def _detect_ats_source(url: str) -> str:
 
 def extract_job_from_page(url: str, title_hint: str, company_hint: str) -> dict | None:
     """
-    Uses Scrapling to fetch a discovered URL and extract job details.
-    - Plain Fetcher: fast HTTP-only, works for static pages
-    - StealthyFetcher: headless browser, for JS-rendered / bot-protected pages
+    Fetches a discovered URL with Scrapling's plain HTTP Fetcher and extracts
+    job details from the page text.
 
-    Hard timeout: 10 s per fetch to prevent the pipeline from hanging on slow
-    or unresponsive hosts.  Non-200 responses are skipped immediately.
+    StealthyFetcher (Playwright/Chromium headless) is intentionally NOT used here
+    because it requires system libraries (libcups.so.2) that may not be present.
+    Plain HTTP is sufficient for the vast majority of ATS job pages.
+
+    If the page returns <200 chars of text it is silently skipped — this is
+    typically a JS-only SPA that needs a browser, which we can't run here.
+
+    Hard timeout: 10 s per fetch.
     """
     import time
     time.sleep(1)  # Rate limit: 1 req/sec
 
-    FETCH_TIMEOUT = 10  # seconds — hard cap per Scrapling call
+    FETCH_TIMEOUT   = 10    # seconds
+    MIN_BODY_CHARS  = 200   # skip near-empty pages (JS-rendered, blocked, etc.)
 
     try:
         page   = Fetcher.get(url, timeout=FETCH_TIMEOUT)
@@ -568,20 +574,10 @@ def extract_job_from_page(url: str, title_hint: str, company_hint: str) -> dict 
 
         body_text = page.get_all_text(ignore_tags=["script", "style", "nav", "footer"])
 
-        if len(body_text) < 200:
-            # Sparse response — try headless browser
-            time.sleep(2)
-            page = StealthyFetcher.fetch(
-                url,
-                headless=True,
-                network_idle=True,
-                timeout=FETCH_TIMEOUT * 1000,  # StealthyFetcher uses ms
-            )
-            status = getattr(page, "status", None)
-            if status is not None and status != 200:
-                logger.debug(f"Serper skip non-200 stealthy ({status}): {url}")
-                return None
-            body_text = page.get_all_text(ignore_tags=["script", "style", "nav", "footer"])
+        if len(body_text) < MIN_BODY_CHARS:
+            # JS-rendered / bot-blocked page — no headless fallback available.
+            logger.debug(f"Serper skip sparse page ({len(body_text)} chars): {url}")
+            return None
 
         source_tag = _detect_ats_source(url)
 
