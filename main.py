@@ -47,6 +47,7 @@ from sources.internshala import fetch_internshala
 from sources.yc import fetch_yc
 from sources.freshers_blogs import fetch_freshers_blogs
 from sources.naukri import fetch_naukri
+from sources.hirist import fetch_hirist
 from pipeline.dedup import deduplicate
 from pipeline.prefilter import prefilter, load_profile
 from pipeline.scorer import score_all
@@ -119,6 +120,10 @@ def run():
     if source_enabled("naukri"):
         logger.info("--- Fetching Naukri.com ---")
         raw_jobs.extend(fetch_naukri(profile))
+
+    if source_enabled("hirist"):
+        logger.info("--- Fetching Hirist.tech ---")
+        raw_jobs.extend(fetch_hirist(profile))
 
     total_raw = len(raw_jobs)
     logger.info(f"Total raw jobs from all sources: {total_raw}")
