@@ -20,7 +20,8 @@ real description text to work with, so "3+ years" gets correctly rejected.
 import re
 import logging
 import time
-from scrapling.fetchers import Fetcher, StealthyFetcher
+from scrapling.fetchers import Fetcher
+from sources.utils import is_playwright_available
 
 logger = logging.getLogger(__name__)
 
@@ -91,12 +92,14 @@ def _fetch(url: str, timeout: int = 20):
     except Exception:
         pass
 
-    try:
-        page = StealthyFetcher.fetch(url, headless=True, network_idle=True)
-        return page
-    except Exception as e:
-        logger.debug(f"YC fetch failed for {url}: {e}")
-        return None
+    if is_playwright_available():
+        try:
+            from scrapling.fetchers import StealthyFetcher
+            page = StealthyFetcher.fetch(url, headless=True, network_idle=True)
+            return page
+        except Exception as e:
+            logger.debug(f"YC fetch failed for {url}: {e}")
+    return None
 
 
 # ─────────────────────────────────────────────────────────────────

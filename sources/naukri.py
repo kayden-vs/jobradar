@@ -208,7 +208,10 @@ def _get_with_backoff(url: str, params: dict = None) -> "requests.Response | Non
                     "correctly in sources/naukri.py."
                 )
                 return None
-            logger.warning("Naukri HTTP %d for %s", resp.status_code, url)
+            if resp.status_code == 404:
+                logger.debug("Naukri HTTP 404 for %s (likely empty or out-of-bounds page)", url)
+            else:
+                logger.warning("Naukri HTTP %d for %s", resp.status_code, url)
             return None
         except requests.exceptions.RequestException as exc:
             logger.warning("Naukri request error (attempt %d/%d): %s", attempt, _MAX_RETRIES, exc)

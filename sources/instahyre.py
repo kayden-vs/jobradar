@@ -32,6 +32,8 @@ _SCRAPE_URLS = [
 ]
 
 
+from sources.utils import is_playwright_available
+
 def fetch_instahyre() -> list[dict]:
     """
     Scrape Instahyre job listings via Scrapling (StealthyFetcher).
@@ -40,6 +42,9 @@ def fetch_instahyre() -> list[dict]:
     This function goes straight to the Scrapling path.  When the API is fixed,
     restore the API-first approach from the commented block above.
     """
+    if not is_playwright_available():
+        logger.info("Instahyre: Playwright is unavailable (missing libcups), skipping Instahyre.")
+        return []
     return _fetch_instahyre_scrapling()
 
 

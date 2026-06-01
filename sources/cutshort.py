@@ -1,5 +1,5 @@
 import logging
-from scrapling.fetchers import StealthyFetcher
+from sources.utils import is_playwright_available
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +22,11 @@ def fetch_cutshort() -> list[dict]:
     Scrapes Cutshort job search results.
     Cutshort uses client-side rendering, so we need StealthyFetcher.
     """
+    if not is_playwright_available():
+        logger.info("Cutshort: Playwright is unavailable (missing libcups), skipping Cutshort.")
+        return []
+    
+    from scrapling.fetchers import StealthyFetcher
     all_jobs = []
     seen_urls = set()
     
@@ -70,7 +75,10 @@ def fetch_job_description(url: str) -> str:
     Fetches the full JD for a Cutshort job listing.
     Called only for jobs that pass the pre-filter.
     """
+    if not is_playwright_available():
+        return ""
     try:
+        from scrapling.fetchers import StealthyFetcher
         page = StealthyFetcher.fetch(url, headless=True, network_idle=True)
         desc = page.css(".job-description, [data-testid='job-description']")
         return desc[0].text if desc else ""
