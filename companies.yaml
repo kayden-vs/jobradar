@@ -34,6 +34,46 @@ greenhouse:
   - blenheimchalcot
   - nasuni
   - crunchyroll
+  - slice
+  - highradius
+  - pine
+  - karbon
+  - loop
+  - glance
+  - inmobi
+  - druva
+  - zenoti
+  - route
+  - hackerrank
+  - zscaler
+  - cloudflare
+  - stripe
+  - twilio
+  - mongodb
+  - elastic
+  - databricks
+  - grafanalabs
+  - datadog
+  - newrelic
+  - sumologic
+  - pagerduty
+  - cribl
+  - jfrog
+  - orcasecurity
+  - gitlab
+  - circleci
+  - buildkite
+  - airtable
+  - figma
+  - coursera
+  - udemy
+  - canonical
+  - remotecom
+  - turing
+  - upwork
+  - planetscale
+  - newton
+  - stage
 
 # Greenhouse EU — endpoint: boards.eu.greenhouse.io/v1/boards/{SLUG}/jobs?content=true
 # Companies that use the European Greenhouse instance
@@ -53,16 +93,103 @@ lever:
   - nium
   - 100ms
   - GoToGroup
+  - cred
+  - fi
+  - capital
+  - porter
+  - mindtickle
+  - belong
+  - whereby
+  - toptal
 
 
 # Ashby — endpoint: api.ashbyhq.com/posting-api/job-board/{SLUG}
 ashby:
-  # Find the correct slug from the company's careers page URL: jobs.ashbyhq.com/SLUG
-  # - setu              # needs slug verification
-  # - decentro          # needs slug verification
-  # - cashfree-payments # needs slug verification
+  - navi
+  - ditto
+  - bounce
+  - clarisights
+  - confluent
+  - linear
+  - notion
+  - zapier
+  - buffer
+  - deel
+  - oyster
+  - andela
+  - supabase
+  - railway
+  - render
+  - infisical
+  - triggerdev
+  - mintlify
+  - resend
+  - stytch
+  - workos
+  - scaler
 
 # Workable — endpoint: apply.workable.com/api/v3/accounts/{SLUG}/jobs
 workable:
   - juspay             # returned 0 jobs (may have no open roles right now)
   # sarvam-ai returned 404 — verify correct slug at apply.workable.com/{SLUG}
+  - gridlines
+  - apna
+
+
+# ─────────────────────────────────────────────────────────────────────
+# NEW ATS PLATFORMS (from companies_found.yaml)
+# ─────────────────────────────────────────────────────────────────────
+
+# SmartRecruiters — list: api.smartrecruiters.com/v1/companies/{SLUG}/postings
+#                   detail: api.smartrecruiters.com/v1/companies/{SLUG}/postings/{JOB_ID}
+#                   page: careers.smartrecruiters.com/{SLUG}
+#   NOTE: SmartRecruiters slugs are case-sensitive (use the exact company identifier)
+smartrecruiters:
+  - Upstox             # Upstox
+  - Lendingkart        # Lendingkart
+  - Turtlemint         # Turtlemint
+  - Lokal              # Lokal
+  - Cars24             # Cars24
+  - ixigo              # ixigo
+  - Freshworks         # Freshworks
+  - Whatfix            # Whatfix
+  - MercerMettl        # Mercer Mettl
+  - InterviewMocha     # Interview Mocha
+  - Skillate           # Skillate
+  - ServiceNow         # ServiceNow India
+  - Canva              # Canva India
+  - Unacademy          # Unacademy
+  - Dailymotion        # Dailymotion India
+
+# Rippling ATS — list:   ats.rippling.com/api/v2/board/{SLUG}/jobs?pageSize=100
+#                detail: ats.rippling.com/api/v2/board/{SLUG}/jobs/{JOB_UUID}
+#                page:   ats.rippling.com/{SLUG}/jobs
+rippling:
+  - axio               # Axio
+  - multiplier         # Multiplier
+  - dub                # Dub
+
+# BambooHR — list:   {SLUG}.bamboohr.com/careers/list  (JSON)
+#             detail: {SLUG}.bamboohr.com/careers/{JOB_ID}  (HTML, no public JSON detail)
+#             page:   {SLUG}.bamboohr.com/careers
+bamboohr:
+  - urban              # Urban Company
+  - shadowfax          # Shadowfax
+  - google             # Google India
+  - meta               # Meta India
+  - flyio              # Fly.io
+
+# Recruitee — list: {SLUG}.recruitee.com/api/offers/  (JSON, description inside)
+#             page: {SLUG}.recruitee.com/
+recruitee:
+  - unstop             # Unstop
+  - salesforce         # Salesforce India
+  - ibm                # IBM India
+
+# Personio — list: {SLUG}.jobs.personio.de/xml?language=en  (XML feed, no auth needed)
+#            page: {SLUG}.jobs.personio.de/
+personio:
+  - open               # Open Financial Technologies
+  - josh               # Josh
+  - amazon             # Amazon India
+  - basecamp           # Basecamp

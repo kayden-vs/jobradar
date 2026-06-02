@@ -2,6 +2,7 @@ import requests
 import yaml
 import logging
 import re
+import xml.etree.ElementTree as ET
 from datetime import datetime
 from bs4 import BeautifulSoup
 
@@ -149,19 +150,26 @@ def fetch_ashby(company_slug: str) -> list[dict]:
     """
     Polls Ashby HQ's public API.
     URL: https://api.ashbyhq.com/posting-api/job-board/{slug}
+    Response: { "jobs": [...], "apiVersion": "..." }
+    Each job has: title, location, jobUrl, applyUrl, publishedAt,
+                  descriptionPlain (already plain text), descriptionHtml (HTML fallback)
     """
     url = f"https://api.ashbyhq.com/posting-api/job-board/{company_slug}"
     try:
         r = requests.get(url, timeout=10)
         r.raise_for_status()
         jobs = []
-        for job in r.json().get("jobPostings", []):
-            desc_html = job.get("descriptionHtml", "") or job.get("description", "")
+        for job in r.json().get("jobs", []):           # API key is 'jobs', not 'jobPostings'
+            # Prefer pre-stripped plain text; fall back to stripping HTML
+            description = (
+                job.get("descriptionPlain", "").strip()
+                or _strip_html(job.get("descriptionHtml", ""))
+            )
             jobs.append({
                 "title":       job.get("title", ""),
                 "company":     company_slug.replace("-", " ").title(),
-                "location":    job.get("locationName", "Not specified"),
-                "description": _strip_html(desc_html),
+                "location":    job.get("location", "Not specified") or "Not specified",
+                "description": description,
                 "url":         job.get("jobUrl", f"https://jobs.ashbyhq.com/{company_slug}/{job.get('id', '')}"),
                 "source":      "ashby",
                 "salary":      "",
@@ -223,6 +231,266 @@ def fetch_workable(company_slug: str) -> list[dict]:
         return []
 
 
+# ─────────────────────────────────────────────────────────────────────
+# SMARTRECRUITERS
+# ─────────────────────────────────────────────────────────────────────
+
+def _fetch_smartrecruiters_jd(company_slug: str, job_id: str) -> str:
+    """
+    Fetch full JD from SmartRecruiters single-job endpoint.
+    URL: https://api.smartrecruiters.com/v1/companies/{slug}/postings/{job_id}
+    """
+    url = f"https://api.smartrecruiters.com/v1/companies/{company_slug}/postings/{job_id}"
+    try:
+        r = requests.get(url, timeout=10)
+        r.raise_for_status()
+        data = r.json()
+        sections = data.get("jobAd", {}).get("sections", {})
+        # Concatenate all named sections: companyDescription, jobDescription, qualifications, additionalInformation
+        parts = []
+        for section_key in ("companyDescription", "jobDescription", "qualifications", "additionalInformation"):
+            section = sections.get(section_key, {})
+            title = section.get("title", "")
+            text  = section.get("text", "")
+            if text:
+                parts.append(f"## {title}\n{_strip_html(text)}" if title else _strip_html(text))
+        return "\n\n".join(parts).strip()
+    except Exception as e:
+        logger.debug(f"SmartRecruiters JD fetch failed for job {job_id}: {e}")
+        return ""
+
+
+def fetch_smartrecruiters(company_slug: str) -> list[dict]:
+    """
+    Polls SmartRecruiters' public Posting API for a company.
+    List endpoint: https://api.smartrecruiters.com/v1/companies/{slug}/postings
+    SmartRecruiters slugs are case-sensitive (company identifier from their URL).
+    """
+    url = f"https://api.smartrecruiters.com/v1/companies/{company_slug}/postings"
+    try:
+        r = requests.get(url, params={"limit": 100}, timeout=10)
+        r.raise_for_status()
+        jobs = []
+        for job in r.json().get("content", []):
+            job_id   = job.get("id", "")
+            location = job.get("location", {})
+            loc_str  = location.get("fullLocation", "") or ", ".join(
+                filter(None, [location.get("city", ""), location.get("country", "")])
+            ) or "Not specified"
+
+            description = _fetch_smartrecruiters_jd(company_slug, job_id) if job_id else ""
+
+            jobs.append({
+                "title":       job.get("name", ""),
+                "company":     job.get("company", {}).get("name", company_slug),
+                "location":    loc_str,
+                "description": description,
+                "url":         f"https://jobs.smartrecruiters.com/{company_slug}/{job_id}",
+                "source":      "smartrecruiters",
+                "salary":      "",
+                "posted_at":   job.get("releasedDate", ""),
+            })
+        return jobs
+    except Exception as e:
+        logger.warning(f"SmartRecruiters fetch failed for {company_slug}: {e}")
+        return []
+
+
+# ─────────────────────────────────────────────────────────────────────
+# RIPPLING ATS
+# ─────────────────────────────────────────────────────────────────────
+
+def fetch_rippling(company_slug: str) -> list[dict]:
+    """
+    Polls Rippling's undocumented public board API.
+    List endpoint: https://ats.rippling.com/api/v2/board/{slug}/jobs
+    Job detail:    https://ats.rippling.com/api/v2/board/{slug}/jobs/{uuid}
+    Career page:   https://ats.rippling.com/{slug}/jobs
+    Detail response includes 'createdOn' (ISO datetime) and description.company/role (HTML).
+    """
+    url = f"https://ats.rippling.com/api/v2/board/{company_slug}/jobs"
+    try:
+        r = requests.get(url, params={"pageSize": 100}, timeout=10)
+        r.raise_for_status()
+        jobs = []
+        for job in r.json().get("items", []):
+            job_uuid  = job.get("id", "")
+            locations = job.get("locations", [])
+            loc_str   = ", ".join(
+                loc.get("name", "") for loc in locations if loc.get("name")
+            ) or "Not specified"
+
+            description = ""
+            posted_at   = ""
+            if job_uuid:
+                detail_url = f"https://ats.rippling.com/api/v2/board/{company_slug}/jobs/{job_uuid}"
+                try:
+                    dr = requests.get(detail_url, timeout=10)
+                    dr.raise_for_status()
+                    detail = dr.json()
+                    desc = detail.get("description", {})
+                    parts = []
+                    if desc.get("company"):
+                        parts.append(_strip_html(desc["company"]))
+                    if desc.get("role"):
+                        parts.append(_strip_html(desc["role"]))
+                    description = "\n\n".join(p for p in parts if p).strip()
+                    posted_at   = detail.get("createdOn", "")
+                except Exception as e:
+                    logger.debug(f"Rippling JD fetch failed for job {job_uuid}: {e}")
+
+            jobs.append({
+                "title":       job.get("name", ""),
+                "company":     company_slug.replace("-", " ").title(),
+                "location":    loc_str,
+                "description": description,
+                "url":         job.get("url", f"https://ats.rippling.com/{company_slug}/jobs/{job_uuid}"),
+                "source":      "rippling",
+                "salary":      "",
+                "posted_at":   posted_at,
+            })
+        return jobs
+    except Exception as e:
+        logger.warning(f"Rippling fetch failed for {company_slug}: {e}")
+        return []
+
+
+# ─────────────────────────────────────────────────────────────────────
+# BAMBOOHR
+# ─────────────────────────────────────────────────────────────────────
+
+def fetch_bamboohr(company_slug: str) -> list[dict]:
+    """
+    Polls BambooHR's public careers JSON endpoint.
+    List endpoint: https://{slug}.bamboohr.com/careers/list
+    Career page:   https://{slug}.bamboohr.com/careers
+    NOTE: The list endpoint does not include full JDs — only metadata.
+    The individual job URL is the public-facing HTML page.
+    """
+    url = f"https://{company_slug}.bamboohr.com/careers/list"
+    try:
+        r = requests.get(url, timeout=10)
+        r.raise_for_status()
+        jobs = []
+        for job in r.json().get("result", []):
+            job_id   = job.get("id", "")
+            location = job.get("location", {})
+            loc_parts = filter(None, [location.get("city", ""), location.get("state", "")])
+            loc_str  = ", ".join(loc_parts) or "Not specified"
+
+            jobs.append({
+                "title":       job.get("jobOpeningName", ""),
+                "company":     company_slug.replace("-", " ").title(),
+                "location":    loc_str,
+                "description": "",  # No public JSON description; visit job URL
+                "url":         f"https://{company_slug}.bamboohr.com/careers/{job_id}",
+                "source":      "bamboohr",
+                "salary":      "",
+                "posted_at":   "",
+            })
+        return jobs
+    except Exception as e:
+        logger.warning(f"BambooHR fetch failed for {company_slug}: {e}")
+        return []
+
+
+# ─────────────────────────────────────────────────────────────────────
+# RECRUITEE
+# ─────────────────────────────────────────────────────────────────────
+
+def fetch_recruitee(company_slug: str) -> list[dict]:
+    """
+    Polls Recruitee's public careers API.
+    List endpoint: https://{slug}.recruitee.com/api/offers/
+    Career page:   https://{slug}.recruitee.com/
+    The response includes inline HTML description and requirements fields.
+    """
+    url = f"https://{company_slug}.recruitee.com/api/offers/"
+    try:
+        r = requests.get(url, timeout=10)
+        r.raise_for_status()
+        jobs = []
+        for job in r.json().get("offers", []):
+            # Description is inside translations.en.description (preferred) or top-level description
+            desc_html = (
+                job.get("translations", {}).get("en", {}).get("description")
+                or job.get("description", "")
+            )
+            req_html = (
+                job.get("translations", {}).get("en", {}).get("requirements")
+                or job.get("requirements", "")
+            )
+            description = _strip_html(desc_html)
+            requirements = _strip_html(req_html)
+            full_desc = "\n\n".join(p for p in [description, requirements] if p).strip()
+
+            jobs.append({
+                "title":       job.get("title", ""),
+                "company":     job.get("company_name", company_slug.replace("-", " ").title()),
+                "location":    job.get("location", "Not specified") or "Not specified",
+                "description": full_desc,
+                "url":         job.get("careers_url", f"https://{company_slug}.recruitee.com/o/{job.get('slug', '')}"),
+                "source":      "recruitee",
+                "salary":      "",
+                "posted_at":   job.get("published_at", ""),
+            })
+        return jobs
+    except Exception as e:
+        logger.warning(f"Recruitee fetch failed for {company_slug}: {e}")
+        return []
+
+
+# ─────────────────────────────────────────────────────────────────────
+# PERSONIO
+# ─────────────────────────────────────────────────────────────────────
+
+def fetch_personio(company_slug: str) -> list[dict]:
+    """
+    Polls Personio's public XML job feed.
+    Endpoint: https://{slug}.jobs.personio.de/xml?language=en
+    Career page: https://{slug}.jobs.personio.de/
+    The XML has <workzag-jobs><position> elements with <name>, <office>,
+    <department>, <jobDescriptions>, <createdAt>, and an implicit job URL.
+    """
+    url = f"https://{company_slug}.jobs.personio.de/xml"
+    try:
+        r = requests.get(url, params={"language": "en"}, timeout=10)
+        r.raise_for_status()
+        root = ET.fromstring(r.content)
+        jobs = []
+        for pos in root.findall("position"):
+            job_id    = pos.findtext("id", "").strip()
+            title     = pos.findtext("name", "").strip()
+            office    = pos.findtext("office", "").strip()
+            dept      = pos.findtext("department", "").strip()
+            created   = pos.findtext("createdAt", "").strip()
+            location  = ", ".join(filter(None, [office, dept])) or "Not specified"
+
+            # Concatenate all jobDescription sections into one description
+            desc_parts = []
+            for jd in pos.findall(".//jobDescription"):
+                section_name  = jd.findtext("name", "").strip()
+                section_value = jd.findtext("value", "").strip()
+                if section_value:
+                    clean = _strip_html(section_value)
+                    desc_parts.append(f"## {section_name}\n{clean}" if section_name else clean)
+
+            jobs.append({
+                "title":       title,
+                "company":     company_slug.replace("-", " ").title(),
+                "location":    location,
+                "description": "\n\n".join(desc_parts).strip(),
+                "url":         f"https://{company_slug}.jobs.personio.de/job/{job_id}" if job_id else f"https://{company_slug}.jobs.personio.de/",
+                "source":      "personio",
+                "salary":      "",
+                "posted_at":   created,
+            })
+        return jobs
+    except Exception as e:
+        logger.warning(f"Personio fetch failed for {company_slug}: {e}")
+        return []
+
+
 # ─────────────────────────────────────────────────────────────────
 # ORCHESTRATOR
 # ─────────────────────────────────────────────────────────────────
@@ -257,6 +525,31 @@ def fetch_all_ats(companies_config: dict) -> list[dict]:
         jobs = fetch_workable(company)
         all_jobs.extend(jobs)
         logger.info(f"Workable {company}: {len(jobs)} jobs")
+
+    for company in companies_config.get("smartrecruiters") or []:
+        jobs = fetch_smartrecruiters(company)
+        all_jobs.extend(jobs)
+        logger.info(f"SmartRecruiters {company}: {len(jobs)} jobs")
+
+    for company in companies_config.get("rippling") or []:
+        jobs = fetch_rippling(company)
+        all_jobs.extend(jobs)
+        logger.info(f"Rippling {company}: {len(jobs)} jobs")
+
+    for company in companies_config.get("bamboohr") or []:
+        jobs = fetch_bamboohr(company)
+        all_jobs.extend(jobs)
+        logger.info(f"BambooHR {company}: {len(jobs)} jobs")
+
+    for company in companies_config.get("recruitee") or []:
+        jobs = fetch_recruitee(company)
+        all_jobs.extend(jobs)
+        logger.info(f"Recruitee {company}: {len(jobs)} jobs")
+
+    for company in companies_config.get("personio") or []:
+        jobs = fetch_personio(company)
+        all_jobs.extend(jobs)
+        logger.info(f"Personio {company}: {len(jobs)} jobs")
 
     logger.info(f"ATS total: {len(all_jobs)} raw jobs")
     return all_jobs
