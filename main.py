@@ -10,11 +10,11 @@ load_dotenv()
 # CLI ARGS — parsed before imports so logging can be per-user
 #
 # Usage:
-#   python main.py                              # defaults to profiles/rohit.yaml
-#   python main.py profiles/alice.yaml
-#   python main.py profiles/rohit.yaml --dry-run
+#   python main.py                    # defaults to profile.yaml
+#   python main.py profile.yaml
+#   python main.py profile.yaml --dry-run
 # ─────────────────────────────────────────────────────────────────
-_profile_path = "profiles/rohit.yaml"
+_profile_path = "profile.yaml"
 _dry_run = False
 for _arg in sys.argv[1:]:
     if _arg == "--dry-run":
@@ -23,7 +23,7 @@ for _arg in sys.argv[1:]:
         _profile_path = _arg
 
 # Derive a short username from the profile filename for per-user log naming
-# e.g. "profiles/rohit.yaml" → "rohit"
+# e.g. "profile.yaml" → "profile"
 _username = os.path.splitext(os.path.basename(_profile_path))[0]
 
 # Ensure data/ exists before FileHandler tries to open the log file
