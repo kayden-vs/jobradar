@@ -23,9 +23,10 @@ logger = logging.getLogger(__name__)
 # Quality: Llama 4 MoE architecture — better than 8B, close to 70B
 # ─────────────────────────────────────────────────────────────────
 MODEL        = "meta-llama/llama-4-scout-17b-16e-instruct"
-REQ_INTERVAL = 3.6        # seconds between scoring calls
-                           # 60s / 3.6 = 16.7 req/min × ~1750 tokens = ~29K TPM
-                           # Keeps us just under Groq's 30K TPM hard limit.
+REQ_INTERVAL = 5.0        # seconds between scoring calls
+                           # Calibrated from observed usage: ~2,240 tokens/call actual.
+                           # 60s / 5.0 = 12 req/min × 2,400 = 28,800 TPM → safely under 30K.
+                           # (Previous 3.6s → 37K TPM → exceeded limit 4× per run)
 _last_call_ts = 0.0        # module-level timestamp tracker
 
 # ─────────────────────────────────────────────────────────────────
@@ -40,29 +41,31 @@ _last_call_ts = 0.0        # module-level timestamp tracker
 # With 20% safety margin: 200K usable tokens per run.
 #
 # Layer 1 — Per-minute (TPM): handled by REQ_INTERVAL throttle.
-#   Each job costs ~1,750 tokens worst-case.
-#   16.7 req/min (3.6s gap) × 1,750 = ~29,200 TPM → safely under 30K.
+#   Observed actual cost: ~2,240 tokens/call (system prompt is heavier
+#   than estimated — few-shot examples + full scoring rules + profile).
+#   12 req/min (5.0s gap) × 2,400 = 28,800 TPM → safely under 30K.
 #
 # Layer 2 — Per-run daily budget: TOKEN_BUDGET_PER_RUN.
-#   This is NOT a per-minute cap. A run of 114 jobs takes ~6.8 min,
-#   spanning multiple TPM windows. The total budget for that whole run
-#   is 200K tokens (80% of 250K half-day allocation).
+#   This is NOT a per-minute cap. A run of ~83 jobs at 5s each takes
+#   ~7 min, spanning multiple TPM windows. Total budget for that whole
+#   run is 200K tokens (80% of 250K half-day allocation).
 #   This guards against accidentally scoring thousands of jobs if the
 #   pre-filter is overly permissive.
 #
-# Per-job cost breakdown:
-#   System prompt + few-shot examples : ~500 tokens  (Groq may cache)
-#   User prompt (profile + JD 3000 ch): ~1150 tokens average
-#   Response (max_tokens=600)          :  600 tokens
+# Per-job cost (observed from actual runs):
+#   System prompt + few-shot examples : ~800 tokens  (heavier than estimated)
+#   User prompt (profile + rules + JD): ~1,100 tokens average
+#   Response (actual, not max_tokens) :  ~340 tokens
 #   ──────────────────────────────────────────────────
-#   Total per job                      : ~1750 tokens worst-case
-#   Max jobs per run at 200K budget    : ~114 jobs
-#   Run duration for 114 jobs          : ~6.8 minutes
+#   Total per job                      : ~2,240 tokens (observed)
+#   Max jobs per run at 200K budget    : ~89 jobs
+#   Run duration for 89 jobs           : ~7.4 minutes
 # ─────────────────────────────────────────────────────────────────
 TOKEN_BUDGET_PER_RUN  = 200_000  # 80% of (500K TPD ÷ 2 runs/day) — per-run ceiling
-SYSTEM_PROMPT_TOKENS  = 500      # fixed overhead: system msg + few-shot
-RESPONSE_TOKENS       = 600      # max_tokens setting
+SYSTEM_PROMPT_TOKENS  = 800      # observed: system msg + few-shot + rules overhead
+RESPONSE_TOKENS       = 400      # observed average (actual responses ~300-400 tokens)
 CHARS_PER_TOKEN       = 4        # standard approximation (1 token ≈ 4 chars)
+
 
 
 def _groq_client() -> Groq:
