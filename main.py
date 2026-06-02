@@ -63,6 +63,8 @@ from sources.yc import fetch_yc
 from sources.freshers_blogs import fetch_freshers_blogs
 from sources.naukri import fetch_naukri
 from sources.hirist import fetch_hirist
+from sources.jobicy import fetch_jobicy
+from sources.remoteok import fetch_remoteok
 from pipeline.dedup import deduplicate
 from pipeline.prefilter import prefilter, load_profile
 from pipeline.scorer import score_all
@@ -185,6 +187,14 @@ def run(profile_path: str, dry_run: bool = False):
     if source_enabled("hirist"):
         logger.info("--- Fetching Hirist.tech ---")
         raw_jobs.extend(fetch_hirist(profile))
+
+    if source_enabled("jobicy"):
+        logger.info("--- Fetching Jobicy (remote jobs API) ---")
+        raw_jobs.extend(fetch_jobicy())
+
+    if source_enabled("remoteok"):
+        logger.info("--- Fetching RemoteOK (JSON API) ---")
+        raw_jobs.extend(fetch_remoteok())
 
     total_raw = len(raw_jobs)
     logger.info(f"Total raw jobs from all sources: {total_raw}")

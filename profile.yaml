@@ -17,6 +17,8 @@ sources:
   freshers_blogs: true   # Indian fresher blogs (RSS) + Cuvette.tech — high volume off-campus/internship listings
   naukri:         true   # Naukri.com — India's largest job board (API-based, fresher-filtered)
   hirist:         false  # Hirist.tech — India niche tech job board (JS-rendered, disable until tested) TODO: Test hirist and fix issues
+  jobicy:         true   # Jobicy.com — free remote jobs API, good for catching remote-first companies open to India
+  remoteok:       true   # RemoteOK — JSON API, dev/engineering jobs from global startups open to India timezone
 
 
 candidate:
