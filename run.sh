@@ -25,8 +25,8 @@ if [ $? -ne 0 ]; then
     echo "WARNING: git pull failed, continuing with existing code" >> "$LOG_FILE"
 fi
 
-# timeout 2400 = kill Python after 40 minutes if it hangs
-timeout 2400 python main.py >> "$LOG_FILE" 2>&1
+# kill Python after 60 minutes if it hangs
+timeout 3600 python main.py >> "$LOG_FILE" 2>&1
 EXIT_CODE=$?
 
 if [ $EXIT_CODE -eq 124 ]; then
