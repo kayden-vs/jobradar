@@ -1,32 +1,41 @@
 """
 sources/serper.py — Google dork-based job discovery via Serper.dev
 
-Architecture
-────────────
-  - DORK_TEMPLATES: 60+ parameterised templates across 8 buckets:
-      1. ATS site-targeted  (lever, greenhouse, ashby, workable, rippling, …)
-      2. General backend   (broad entry-level India)
-      3. Go/Golang specific
-      4. TypeScript / Node.js
-      5. Fintech / Crypto / Payments
-      6. Remote-first / global startups in India
-      7. Hidden applications (Google Forms, Notion, Typeform)
-      8. Company career pages ("We are hiring" posts)
+Strategy: hunt what NO other source can find
+────────────────────────────────────────────
+  sources/ats.py already polls Greenhouse, Lever, Ashby, Workable, SmartRecruiters,
+  Rippling, BambooHR, Recruitee, and Personio via structured APIs — all listed companies
+  get full, structured, 100% coverage.  Serper site: queries on those same platforms
+  find a random Google-indexed sample of the same jobs.  That's waste.
 
-  - build_dork_queries(profile): generates concrete query strings from the
-    templates, substituted with the candidate's actual skills/roles from
-    profile.yaml.  This means adding a new skill automatically produces new
-    dork variants — no manual update required.
+  Serper's actual edge is finding jobs that ZERO other sources can:
+    1. Company-owned career pages not on any ATS (startups with custom /careers pages)
+    2. Indian ATS platforms not in companies.yaml (Keka, Freshteam, Zoho Recruit)
+    3. Hidden applications (Google Forms, Notion, Typeform, Airtable)
+    4. Language-specific Go/TS searches on company career pages
+    5. Remote-first global startups with India presence
 
-  - fetch_serper_jobs(): shuffles the full query pool so different queries
-    run on each execution.  Over a week all 60+ queries get coverage while
-    staying inside the 2,500 credit/month free budget.
+Query tiers (enforced in fetch_serper_jobs)
+────────────────────────────────────────────
+  Tier 1 — Unique/non-overlapping (GUARANTEED TIER_1_BUDGET=10 slots):
+    • _OWNED_CAREER_TEMPLATES  — company career pages with explicit ATS exclusions
+    • _ALT_ATS_TEMPLATES       — Keka, Freshteam, Zoho (not in ats.py at all)
+    • _HIDDEN_APPLY_TEMPLATES  — Google Forms, Notion, Typeform
 
-Budget maths
-────────────
-  MAX_SERPER_CALLS = 15 queries/run  (tunable)
-  15/day × 30 days = 450 credits/month — comfortably within the 2,500 limit.
-  To increase coverage: raise MAX_SERPER_CALLS up to ~30 (still < 900/month).
+  Tier 2 — High-value, language-specific (fill after Tier 1):
+    • _GOLANG_TEMPLATES, _TYPESCRIPT_NODE_TEMPLATES
+    • _FINTECH_CRYPTO_TEMPLATES, _REMOTE_GLOBAL_TEMPLATES
+    • _CAREER_PAGE_TEMPLATES   (improved with ATS exclusion operators)
+
+  Tier 3 — Low-priority filler, high ATS overlap (remaining slots):
+    • _ATS_SITE_TEMPLATES      — KEPT but demoted: Google occasionally surfaces
+      companies NOT in companies.yaml. Only 3–5 of 25 slots used here.
+    • _GENERAL_BACKEND_TEMPLATES — broad, lower precision
+
+Budget
+──────
+  MAX_SERPER_CALLS = 25/run × 2 runs/day × 30 days = 1,500 credits/month
+  (60% of Serper free tier 2,500/month — still safe)
 """
 
 import os
@@ -44,8 +53,12 @@ SERPER_API_KEY = os.getenv("SERPER_API_KEY")
 SERPER_URL     = "https://google.serper.dev/search"
 
 # Hard cap: never spend more than this many Serper API credits per run.
-# Free tier = 2,500/month.  15/day × 30 days = 450/month.
-MAX_SERPER_CALLS = 15
+# 25/run × 2 runs/day × 30 days = 1,500/month (60% of free-tier 2,500).
+MAX_SERPER_CALLS = 25
+
+# Guaranteed slots reserved for Tier-1 queries (unique, non-overlapping sources).
+# Remaining MAX_SERPER_CALLS - TIER_1_BUDGET slots go to Tier-2 then Tier-3.
+TIER_1_BUDGET = 10
 
 # ─────────────────────────────────────────────────────────────────────────────
 # DOMAIN BLOCKLIST
@@ -126,39 +139,28 @@ _ATS_NETLOC_MAP = {
 # runtime by build_dork_queries().  Each concrete query counts as 1 credit.
 # ─────────────────────────────────────────────────────────────────────────────
 
-# ── Bucket 1: ATS site-targeted ───────────────────────────────────────────
-# High-precision: Google limits results to a specific ATS domain.
-# Each site: operator costs 1 credit but returns very relevant results.
+# ── Bucket 1: ATS site-targeted (TIER 3 — low priority filler) ────────────
+# IMPORTANT: ats.py already polls Greenhouse/Lever/Ashby/Workable/SmartRecruiters/
+# Rippling/BambooHR/Recruitee/Personio via structured API for all companies in
+# companies.yaml.  These site: queries mostly find the same jobs again.
+# KEPT but demoted to Tier 3 (only 3–5 of 25 slots): Google occasionally surfaces
+# companies NOT in companies.yaml — so there's marginal discovery value.
+# Ashby (JS-rendered) and Workable (JS-rendered) REMOVED — scraping fails on those.
 _ATS_SITE_TEMPLATES = [
-    # Lever
+    # Lever — HTML pages render with plain HTTP (scrapeable)
     'site:lever.co "{skill}" "intern" OR "fresher" "india" OR "remote" OR "bangalore"',
-    'site:lever.co "{skill}" "0-1 years" OR "entry level" "india" OR "remote"',
     'site:lever.co "backend" "{skill}" "india" OR "remote" OR "bengaluru"',
-    'site:lever.co "software engineer" "{skill}" "intern" OR "fresher" "india"',
 
-    # Greenhouse
+    # Greenhouse — HTML pages render with plain HTTP (scrapeable)
     'site:boards.greenhouse.io "{skill}" "intern" OR "fresher" "india" OR "remote"',
-    'site:boards.greenhouse.io "backend" "{skill}" "india" OR "bangalore" 2025 OR 2026',
-    'site:boards.greenhouse.io "software engineer" "{skill}" "india" OR "remote"',
-    'site:boards.greenhouse.io "entry level" OR "junior" "{skill}" "india" OR "remote"',
+    'site:boards.greenhouse.io "backend" "{skill}" "india" OR "bangalore" 2026',
 
-    # Ashby HQ
-    'site:jobs.ashbyhq.com "{skill}" "intern" OR "fresher" OR "0-1 years" "india" OR "remote"',
-    'site:jobs.ashbyhq.com "backend" "{skill}" "india" OR "bangalore" OR "remote"',
-    'site:jobs.ashbyhq.com "software engineer" "{skill}" "india" OR "remote"',
-
-    # Workable
-    'site:apply.workable.com "{skill}" "intern" OR "fresher" "india" OR "remote"',
-    'site:apply.workable.com "backend" "{skill}" "0-1 years" OR "fresher" "india"',
-    'site:apply.workable.com "software engineer" "{skill}" "intern" india',
-
-    # Rippling / SmartRecruiters / Dover (emerging ATS)
-    'site:job.rippling.com "{skill}" "intern" OR "fresher" "india" OR "remote"',
-    'site:jobs.smartrecruiters.com "{skill}" "intern" OR "fresher" "india" OR "remote" "backend"',
-
-    # Combined ATS OR — one query searches multiple boards
+    # Combined — one query, two boards
     '(site:lever.co OR site:boards.greenhouse.io) "{skill}" "intern" OR "fresher" "india" OR "remote"',
-    '(site:jobs.ashbyhq.com OR site:apply.workable.com) "{skill}" "fresher" OR "intern" "india"',
+    # REMOVED: site:jobs.ashbyhq.com — JS-rendered, scraping returns < 200 chars
+    # REMOVED: site:apply.workable.com — JS-rendered, scraping returns < 200 chars
+    # REMOVED: site:jobs.smartrecruiters.com — already in companies.yaml + ats.py
+    # REMOVED: site:job.rippling.com — already in companies.yaml + ats.py
 ]
 
 # ── Bucket 2: General backend (broad) ─────────────────────────────────────
@@ -242,17 +244,62 @@ _HIDDEN_APPLY_TEMPLATES = [
     '"google form" "backend intern" OR "software intern" "india" 2025 OR 2026',
 ]
 
-# ── Bucket 8: Company career pages / social hiring posts ─────────────────
+# ── Bucket 8: Company career pages (TIER 2 — with ATS exclusion operators) ──
+# Adding -site: exclusions prevents hitting Greenhouse/Lever pages already
+# covered by ats.py, forcing Google to return company-specific career pages.
 _CAREER_PAGE_TEMPLATES = [
-    'intitle:"careers" "backend intern" OR "backend fresher" site:*.in',
-    '"we are hiring" "backend" "intern" OR "fresher" india -site:linkedin.com',
-    'intitle:"join us" "backend engineer" "fresher" site:*.io',
-    '"open positions" "backend" "golang" OR "typescript" "india" OR "remote"',
-    '"job openings" "backend engineer" "fresher" OR "intern" "india" 2026',
-    '"apply now" "backend" "intern" OR "fresher" india -site:linkedin.com site:*.io OR site:*.com',
-    '"currently hiring" "backend" OR "software" "intern" OR "fresher" india 2026',
-    '"engineering roles" "intern" OR "fresher" "backend" india startup 2026',
+    'intitle:"careers" "backend intern" OR "backend fresher" site:*.in -site:internshala.com',
+    '"we are hiring" "backend" "intern" OR "fresher" india -site:linkedin.com -site:naukri.com -site:greenhouse.io -site:lever.co',
+    'intitle:"join us" "backend engineer" "fresher" site:*.io -site:greenhouse.io -site:ashbyhq.com',
+    '"open positions" "backend" "golang" OR "typescript" "india" OR "remote" -site:linkedin.com -site:naukri.com',
+    '"job openings" "backend engineer" "fresher" OR "intern" "india" 2026 -site:linkedin.com',
+    '"currently hiring" "backend" OR "software" "intern" OR "fresher" india 2026 -site:linkedin.com -site:greenhouse.io -site:lever.co',
+    '"engineering roles" "intern" OR "fresher" "backend" india startup 2026 -site:linkedin.com',
+    '"hiring" "golang" OR "typescript" "backend" "intern" OR "fresher" site:*.io -site:greenhouse.io -site:ashbyhq.com -site:lever.co',
 ]
+
+
+# ── Bucket 9: Company-owned career pages with ATS exclusions (TIER 1) ────────
+# The KEY INSIGHT: by excluding all major ATS domains we force Google to return
+# results from companies with their OWN /careers pages — exactly the companies
+# NOT covered by ats.py.  This is Serper's unique, irreplaceable value-add.
+_OWNED_CAREER_TEMPLATES = [
+    '"backend intern" india 2026 -site:linkedin.com -site:naukri.com -site:greenhouse.io -site:lever.co -site:ashbyhq.com -site:workable.com -site:internshala.com',
+    '"backend fresher" OR "software intern" india 2026 -site:linkedin.com -site:naukri.com -site:greenhouse.io -site:lever.co -site:smartrecruiters.com',
+    '"golang developer" OR "go developer" "intern" OR "fresher" india -site:linkedin.com -site:naukri.com -site:lever.co -site:greenhouse.io -site:ashbyhq.com',
+    '"typescript backend" OR "node.js backend" "intern" OR "fresher" india -site:linkedin.com -site:greenhouse.io -site:lever.co -site:smartrecruiters.com',
+    'intitle:careers "backend" "intern" OR "fresher" site:*.in 2026 -site:internshala.com -site:hirist.tech -site:naukri.com',
+    'intitle:careers "backend" "golang" OR "typescript" "india" OR "remote" site:*.io -site:greenhouse.io -site:ashbyhq.com -site:lever.co',
+    '"we are hiring" "backend engineer" "fresher" OR "intern" india 2026 -site:linkedin.com -site:greenhouse.io -site:lever.co',
+    '"open to applications" OR "accepting applications" "backend" "intern" OR "fresher" india 2026',
+    '"engineering intern" OR "software intern" "golang" OR "typescript" india startup -site:linkedin.com -site:naukri.com -site:greenhouse.io',
+    '"fintech" OR "payments" "backend" "intern" OR "fresher" india site:*.io -site:greenhouse.io -site:lever.co -site:linkedin.com',
+]
+
+
+# ── Bucket 10: Alternative ATS platforms not in companies.yaml (TIER 1) ──────
+# These platforms are NOT handled by ats.py and NOT listed in companies.yaml.
+# Keka, Freshteam (Freshworks ATS), and Zoho Recruit are widely used by Indian
+# companies but absent from our structured API polling entirely.
+_ALT_ATS_TEMPLATES = [
+    # Keka — popular ATS among mid-size Indian tech companies
+    'site:jobs.keka.com "backend" OR "software engineer" "intern" OR "fresher" india',
+    'site:jobs.keka.com "golang" OR "typescript" OR "node" india',
+    # Freshteam (Freshworks' own ATS — used by many Indian companies)
+    'site:jobs.freshteam.com "backend" OR "software" "intern" OR "fresher" india',
+    'site:jobs.freshteam.com "golang" OR "typescript" india 2026',
+    # Zoho Recruit — extremely common in Indian mid-market tech
+    'site:careers.zoho.com "backend" OR "software engineer" "intern" OR "fresher" india',
+    'site:recruit.zohocloud.com "backend" OR "software" "intern" india',
+    # Instahyre — not fully covered by instahyre.py
+    'site:instahyre.com "backend" "golang" OR "typescript" "intern" OR "fresher"',
+    # Cutshort — not reliably covered by cutshort.py (API issues)
+    'site:cutshort.io "backend" "golang" OR "typescript" OR "node" "intern" OR "fresher" india',
+    # Wellfound/AngelList — discoverable via Google even if direct scraping is blocked
+    'site:wellfound.com/jobs "backend" "intern" OR "fresher" india OR remote',
+]
+
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # PROFILE-DRIVEN TEMPLATE INSTANTIATION
@@ -352,80 +399,100 @@ def _build_location_variants(profile: dict) -> list[str]:
     return out or ["India", "Remote"]
 
 
-def build_dork_queries(profile: dict) -> list[str]:
+def _expand_templates(
+    templates: list[str],
+    skills: list[str],
+    locs: list[str],
+    year: int,
+) -> list[str]:
     """
-    Generate concrete dork query strings from the template library.
+    Expand a template list via Cartesian product over skills (and optionally locations).
+    Module-level so it can be shared by _build_tiered_queries and build_dork_queries.
+    """
+    out = []
+    for tpl in templates:
+        if "{skill}" in tpl and "{city}" in tpl:
+            for skill, city in product(skills[:2], locs[:2]):
+                out.append(tpl.format(skill=skill, city=city, year=year))
+        elif "{skill}" in tpl:
+            for skill in skills:
+                out.append(tpl.format(skill=skill, year=year))
+        elif "{city}" in tpl:
+            for city in locs[:2]:
+                out.append(tpl.format(city=city, year=year))
+        else:
+            out.append(tpl.format(year=year) if "{year}" in tpl else tpl)
+    return out
 
-    Strategy:
-    - ATS-site templates: substitute {skill} with the top-3 strongest skills
-      (precision > recall for these — site: narrows scope enough).
-    - General templates: use a broader set but avoid Cartesian explosion.
-    - Static queries (no placeholders) are kept as-is.
-    - Final list is deduplicated before returning.
 
-    Returns list of query strings, all unique.
+def _build_tiered_queries(profile: dict) -> tuple[list[str], list[str], list[str]]:
+    """
+    Generate query lists split into three priority tiers.
+
+    Tier 1 — Unique / non-overlapping (guaranteed TIER_1_BUDGET slots):
+      Jobs that NO other pipeline source can find:
+      • _OWNED_CAREER_TEMPLATES : company-owned career pages (ATS exclusion operators)
+      • _ALT_ATS_TEMPLATES      : Keka, Freshteam, Zoho, Cutshort, Wellfound
+      • _HIDDEN_APPLY_TEMPLATES : Google Forms, Notion, Typeform, Airtable
+
+    Tier 2 — High-value, language/domain-specific:
+      • Golang, TypeScript, Fintech/Crypto, Remote-global, Career-page queries.
+
+    Tier 3 — Low-priority filler (high ATS.py overlap):
+      • _ATS_SITE_TEMPLATES     : Greenhouse/Lever site: queries
+        (marginal value: can find companies NOT in companies.yaml)
+      • _GENERAL_BACKEND_TEMPLATES: broad, lower precision.
     """
     import datetime
-    current_year = datetime.datetime.now().year
+    year = datetime.datetime.now().year
 
-    skill_tokens   = _build_skill_variants(profile)
-    primary_skills = skill_tokens[:4]   # Top skills for ATS-targeted dorks (precision)
-    broad_skills   = skill_tokens[:6]   # Broader set for general dorks
-
+    skill_tokens    = _build_skill_variants(profile)
+    primary_skills  = skill_tokens[:4]
+    broad_skills    = skill_tokens[:6]
     location_tokens = _build_location_variants(profile)
     primary_locs    = location_tokens[:2]
 
-    all_queries: list[str] = []
+    def _dedup(queries: list[str], exclude: set[str] = None) -> list[str]:
+        seen = set(exclude or [])
+        result = []
+        for q in queries:
+            if q not in seen:
+                seen.add(q)
+                result.append(q)
+        return result
 
-    def _expand(templates: list[str], skills: list[str], locs: list[str]) -> list[str]:
-        """Expand a template list with Cartesian product over skills (and optionally locs)."""
-        out = []
-        for tpl in templates:
-            if "{skill}" in tpl and "{city}" in tpl:
-                for skill, city in product(skills[:2], locs[:2]):
-                    out.append(tpl.format(skill=skill, city=city, year=current_year))
-            elif "{skill}" in tpl:
-                for skill in skills:
-                    out.append(tpl.format(skill=skill, year=current_year))
-            elif "{city}" in tpl:
-                for city in locs[:2]:
-                    out.append(tpl.format(city=city, year=current_year))
-            else:
-                # Static template — year substitution only
-                out.append(tpl.format(year=current_year) if "{year}" in tpl else tpl)
-        return out
+    # ── Tier 1: Guaranteed unique budget ──────────────────────────────────────
+    t1_raw = []
+    t1_raw.extend(_expand_templates(_OWNED_CAREER_TEMPLATES, primary_skills, primary_locs, year))
+    t1_raw.extend(_expand_templates(_ALT_ATS_TEMPLATES,      primary_skills, primary_locs, year))
+    t1_raw.extend(_expand_templates(_HIDDEN_APPLY_TEMPLATES, primary_skills, primary_locs, year))
+    tier1 = _dedup(t1_raw)
 
-    # Bucket 1: ATS site-targeted — most valuable, use primary skills only
-    all_queries.extend(_expand(_ATS_SITE_TEMPLATES,        primary_skills, primary_locs))
+    # ── Tier 2: High-value, language-specific ─────────────────────────────────
+    t2_raw = []
+    t2_raw.extend(_expand_templates(_GOLANG_TEMPLATES,          primary_skills, primary_locs, year))
+    t2_raw.extend(_expand_templates(_TYPESCRIPT_NODE_TEMPLATES, primary_skills, primary_locs, year))
+    t2_raw.extend(_expand_templates(_FINTECH_CRYPTO_TEMPLATES,  primary_skills, primary_locs, year))
+    t2_raw.extend(_expand_templates(_REMOTE_GLOBAL_TEMPLATES,   primary_skills, primary_locs, year))
+    t2_raw.extend(_expand_templates(_CAREER_PAGE_TEMPLATES,     primary_skills, primary_locs, year))
+    tier2 = _dedup(t2_raw, exclude=set(tier1))
 
-    # Bucket 2: General backend — mostly static, very few skill slots
-    all_queries.extend(_expand(_GENERAL_BACKEND_TEMPLATES, broad_skills,   primary_locs))
+    # ── Tier 3: Filler — high ATS.py overlap ──────────────────────────────────
+    t3_raw = []
+    t3_raw.extend(_expand_templates(_ATS_SITE_TEMPLATES,        primary_skills, primary_locs, year))
+    t3_raw.extend(_expand_templates(_GENERAL_BACKEND_TEMPLATES, broad_skills,   primary_locs, year))
+    tier3 = _dedup(t3_raw, exclude=set(tier1) | set(tier2))
 
-    # Bucket 3 & 4: Language-specific (Go, TS) — mostly static
-    all_queries.extend(_expand(_GOLANG_TEMPLATES,          primary_skills, primary_locs))
-    all_queries.extend(_expand(_TYPESCRIPT_NODE_TEMPLATES, primary_skills, primary_locs))
+    return tier1, tier2, tier3
 
-    # Bucket 5: Fintech/Crypto — largely static
-    all_queries.extend(_expand(_FINTECH_CRYPTO_TEMPLATES,  primary_skills, primary_locs))
 
-    # Bucket 6: Remote-global
-    all_queries.extend(_expand(_REMOTE_GLOBAL_TEMPLATES,   primary_skills, primary_locs))
-
-    # Bucket 7: Hidden applications — static
-    all_queries.extend(_expand(_HIDDEN_APPLY_TEMPLATES,    primary_skills, primary_locs))
-
-    # Bucket 8: Career pages — mostly static
-    all_queries.extend(_expand(_CAREER_PAGE_TEMPLATES,     primary_skills, primary_locs))
-
-    # Deduplicate while preserving order
-    seen   = set()
-    unique = []
-    for q in all_queries:
-        if q not in seen:
-            seen.add(q)
-            unique.append(q)
-
-    return unique
+def build_dork_queries(profile: dict) -> list[str]:
+    """
+    Returns the full flat query pool across all tiers (for testing / inspection).
+    The actual run uses _build_tiered_queries() for priority-aware selection.
+    """
+    t1, t2, t3 = _build_tiered_queries(profile)
+    return t1 + t2 + t3
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -488,6 +555,10 @@ def is_job_related_url(url: str) -> bool:
         "ashbyhq.com", "workable.com", "job", "opening",
         "position", "vacancy", "rippling.com", "smartrecruiters",
         "dover.com", "typeform", "airtable",
+        # New: alt ATS platforms (Tier 1 targets)
+        "keka.com", "freshteam.com", "zoho.com", "zohocloud.com",
+        "instahyre.com", "cutshort.io", "wellfound.com",
+        "notion.so", "notion.site",
     ]
     return any(s in url.lower() for s in job_signals)
 
@@ -649,16 +720,20 @@ def _extract_salary(text: str) -> str:
 
 def fetch_serper_jobs(profile: dict | None = None) -> list[dict]:
     """
-    Main function: generates dork queries (profile-driven), shuffles them,
-    runs up to MAX_SERPER_CALLS queries, and extracts jobs from results.
+    Main function: builds tiered dork queries, selects up to MAX_SERPER_CALLS
+    with priority given to unique, non-overlapping sources, then runs them.
 
-    Shuffling ensures that across multiple runs the full 60+ query pool gets
-    coverage even though each run only executes MAX_SERPER_CALLS of them.
+    Selection (25 calls total):
+      • TIER_1_BUDGET (10) slots: guaranteed for Tier 1 (owned career pages,
+        alt ATS, hidden apply).  These find jobs NO other source can.
+      • Remaining 15 slots: Tier 2 first (Go/TS/fintech, shuffled), then
+        Tier 3 filler (Greenhouse/Lever site:, general backend).
 
-    Budget:
-        15 queries/run × 30 days = 450 credits/month (free tier: 2,500/month).
+    Shuffling within each tier ensures full-pool coverage over many runs.
+
+    Budget: 25/run × 2 runs/day × 30 days = 1,500 credits/month
+            (60% of Serper free tier 2,500/month)
     """
-    # Load a minimal default profile if none is provided (standalone testing)
     if profile is None:
         try:
             import yaml
@@ -667,18 +742,26 @@ def fetch_serper_jobs(profile: dict | None = None) -> list[dict]:
         except Exception:
             profile = {}
 
-    all_queries = build_dork_queries(profile)
+    tier1, tier2, tier3 = _build_tiered_queries(profile)
 
-    # Shuffle for query diversity across runs
-    query_pool = list(all_queries)
-    random.shuffle(query_pool)
+    # Shuffle within each tier for coverage diversity across runs
+    random.shuffle(tier1)
+    random.shuffle(tier2)
+    random.shuffle(tier3)
 
-    # Select up to MAX_SERPER_CALLS queries for this run
-    selected_queries = query_pool[:MAX_SERPER_CALLS]
+    # Guarantee Tier-1 budget, then fill from Tier-2 → Tier-3
+    t1_selected   = tier1[:TIER_1_BUDGET]
+    remaining     = MAX_SERPER_CALLS - len(t1_selected)
+    fill_pool     = tier2 + tier3   # tier2 comes first (higher priority)
+    fill_selected = fill_pool[:remaining]
+    selected_queries = t1_selected + fill_selected
 
+    t2_count = min(len(tier2), remaining)
+    t3_count = max(0, remaining - len(tier2))
     logger.info(
-        f"Serper dork pool: {len(all_queries)} unique queries generated, "
-        f"running {len(selected_queries)} this cycle"
+        f"Serper pool: {len(tier1)} tier-1 | {len(tier2)} tier-2 | {len(tier3)} tier-3. "
+        f"Running: {len(t1_selected)} (unique) + {t2_count} (priority) + "
+        f"{t3_count} (filler) = {len(selected_queries)} queries"
     )
 
     all_jobs  : list[dict] = []
@@ -686,7 +769,7 @@ def fetch_serper_jobs(profile: dict | None = None) -> list[dict]:
     queries_run            = 0
 
     for query in selected_queries:
-        logger.debug(f"Serper query [{queries_run+1}/{len(selected_queries)}]: {query[:80]}")
+        logger.debug(f"Serper [{queries_run+1}/{len(selected_queries)}]: {query[:80]}")
         results = search_serper(query)
         queries_run += 1
 

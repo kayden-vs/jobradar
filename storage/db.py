@@ -1,15 +1,16 @@
 import sqlite3
 import hashlib
 import logging
-import os
 import re
 from datetime import datetime
 
-logger = logging.getLogger(__name__)
+logger          = logging.getLogger(__name__)
+_DEFAULT_DB_PATH = "data/jobradar.db"
 
-# DB_PATH is no longer a module-level constant.
-# All public functions accept `db_path: str` explicitly so every user
-# gets their own isolated SQLite file — dedup state never crosses users.
+
+def _db(db_path: str | None) -> str:
+    """Resolve the effective DB path: explicit arg > module default."""
+    return db_path if db_path else _DEFAULT_DB_PATH
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -88,18 +89,13 @@ def make_url_id(job: dict) -> str:
 # DATABASE SETUP
 # ─────────────────────────────────────────────────────────────────
 
-def init_db(db_path: str):
-    """Create tables if they don't exist. Safe to call on every run.
+def init_db(db_path: str | None = None):
+    """Create tables if they don't exist. Safe to call on every run."""
+    import os
+    os.makedirs("data", exist_ok=True)
 
-    Args:
-        db_path: Path to the user's SQLite file, e.g. "data/rohit.db".
-                 The parent directory is created automatically.
-    """
-    db_dir = os.path.dirname(db_path)
-    if db_dir:
-        os.makedirs(db_dir, exist_ok=True)
-
-    conn = sqlite3.connect(db_path)
+    path = _db(db_path)
+    conn = sqlite3.connect(path)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS jobs (
             id           TEXT PRIMARY KEY,   -- MD5 of normalised title+company+location
@@ -117,15 +113,20 @@ def init_db(db_path: str):
             score_reason TEXT,
             highlights   TEXT,
             red_flags    TEXT,
+            apply_angle  TEXT,              -- application angle for score>=8 jobs
             notified     INTEGER DEFAULT 0   -- 0=no, 1=telegram, 2=digest
         )
     """)
-    # Add url_id column if upgrading from old schema (no-op if already exists)
-    try:
-        conn.execute("ALTER TABLE jobs ADD COLUMN url_id TEXT")
-    except Exception:
-        pass
-    # Index for fast URL-based lookups
+    # Schema migrations — safe no-ops if column already exists
+    for col_def in [
+        "ALTER TABLE jobs ADD COLUMN url_id TEXT",
+        "ALTER TABLE jobs ADD COLUMN apply_angle TEXT",
+    ]:
+        try:
+            conn.execute(col_def)
+        except Exception:
+            pass
+    # Indexes for fast lookups
     conn.execute("CREATE INDEX IF NOT EXISTS idx_url_id ON jobs(url_id)")
 
     conn.execute("""
@@ -146,16 +147,11 @@ def init_db(db_path: str):
 # DEDUP QUERY
 # ─────────────────────────────────────────────────────────────────
 
-def is_duplicate(job: dict, db_path: str) -> bool:
-    """Returns True if this job was already seen (by title-hash OR URL).
-
-    Args:
-        job:     Job dict with at least title, company, location, url keys.
-        db_path: Path to the user's SQLite file.
-    """
+def is_duplicate(job: dict, db_path: str | None = None) -> bool:
+    """Returns True if this job was already seen (by title-hash OR URL)."""
     job_id = make_job_id(job)
     url_id = make_url_id(job)
-    conn   = sqlite3.connect(db_path)
+    conn   = sqlite3.connect(_db(db_path))
     # Primary: title-based hash
     row = conn.execute("SELECT id FROM jobs WHERE id=?", (job_id,)).fetchone()
     if row is None and url_id:
@@ -169,25 +165,30 @@ def is_duplicate(job: dict, db_path: str) -> bool:
 # WRITE / READ
 # ─────────────────────────────────────────────────────────────────
 
-def save_job(job: dict, db_path: str, score: int = 0, reason: str = "",
-             highlights: str = "", red_flags: str = "", notified: int = 0):
+def save_job(
+    job: dict,
+    score:       int  = 0,
+    reason:      str  = "",
+    highlights:  str  = "",
+    red_flags:   str  = "",
+    apply_angle: str  = "",
+    notified:    int  = 0,
+    db_path:     str | None = None,
+):
     """Persist a scored job to the database.
 
     Uses INSERT OR IGNORE — re-inserting the same job never resets
     the `notified` flag, preventing duplicate Telegram alerts.
-
-    Args:
-        job:     Scored job dict.
-        db_path: Path to the user's SQLite file.
     """
     job_id = make_job_id(job)
     url_id = make_url_id(job)
-    conn   = sqlite3.connect(db_path)
+    conn   = sqlite3.connect(_db(db_path))
     conn.execute("""
         INSERT OR IGNORE INTO jobs
         (id, url_id, title, company, location, description, url, source,
-         salary, posted_at, seen_at, score, score_reason, highlights, red_flags, notified)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+         salary, posted_at, seen_at, score, score_reason, highlights, red_flags,
+         apply_angle, notified)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     """, (
         job_id, url_id,
         job.get("title", ""),
@@ -203,28 +204,25 @@ def save_job(job: dict, db_path: str, score: int = 0, reason: str = "",
         reason,
         highlights,
         red_flags,
+        apply_angle,
         notified,
     ))
     conn.commit()
     conn.close()
 
 
-def get_jobs_by_score(db_path: str, min_score: int = 6) -> list[dict]:
-    """Retrieve jobs above a score threshold for digest.
-
-    Args:
-        db_path:   Path to the user's SQLite file.
-        min_score: Minimum score to include (default 6).
-    """
-    conn = sqlite3.connect(db_path)
+def get_jobs_by_score(min_score: int = 6, db_path: str | None = None) -> list[dict]:
+    """Retrieve jobs above a score threshold for digest."""
+    conn = sqlite3.connect(_db(db_path))
     rows = conn.execute("""
-        SELECT title, company, location, url, salary, score, score_reason, highlights
+        SELECT title, company, location, url, salary, score, score_reason,
+               highlights, apply_angle
         FROM jobs WHERE score >= ? AND notified = 0
         ORDER BY score DESC
     """, (min_score,)).fetchall()
     conn.close()
     return [
         dict(zip(["title", "company", "location", "url", "salary",
-                  "score", "reason", "highlights"], row))
+                  "score", "reason", "highlights", "apply_angle"], row))
         for row in rows
     ]

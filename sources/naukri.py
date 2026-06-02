@@ -1,14 +1,18 @@
 """
 sources/naukri.py — Naukri.com job aggregator source
 
-API Architecture (two-step):
+API Architecture (two-step, with lazy Step 2):
   Step 1 — Search API: GET /jobapi/v2/search
     Returns a paginated list of job cards with truncated descriptions.
-    Stage-1 filters applied HERE (experience, age) to avoid unnecessary Step 2 calls.
+    Stage-1 filters applied HERE (experience, age) to avoid unnecessary
+    Step 2 calls.
 
   Step 2 — Detail API: GET /jobapi/v2/job/{jobId}
-    Returns the full job description (HTML).  Always fetched for jobs that
-    survive Step 1 filters.  Falls back to truncated jobDesc if this fails.
+    Returns the full job description (HTML).
+    LAZY: only called in scorer.py AFTER a job survives prefilter.
+    This avoids fetching full JDs for the ~90% of jobs that prefilter
+    drops anyway (wrong role, location, experience, etc.).
+    Falls back to truncated jobDesc if this fails.
 
 Required headers for both endpoints (without them the API returns 406):
   appid: 109
@@ -19,7 +23,8 @@ Required headers for both endpoints (without them the API returns 406):
 
 Rate limiting:
   Exponential backoff on HTTP 429 (up to MAX_RETRIES attempts).
-  A polite inter-request delay between job detail calls.
+  A polite inter-request delay between job detail calls (only triggered
+  lazily in scorer.py for jobs that survive prefilter).
 
 Configuration (per profile.yaml `naukri:` block):
   keywords  — list of search keywords
@@ -61,7 +66,7 @@ _HEADERS = {
 }
 
 _RESULTS_PER_PAGE    = 20
-_INTER_REQUEST_DELAY = 1.2   # seconds between detail API calls (rate limit politeness)
+_INTER_REQUEST_DELAY = 0.8   # seconds between detail API calls (polite, post-request)
 _MAX_RETRIES         = 4     # exponential backoff attempts on HTTP 429
 _BACKOFF_BASE        = 2     # seconds (doubles each retry)
 
@@ -249,6 +254,27 @@ def _fetch_job_detail(job_id: str) -> str:
     except Exception as exc:
         logger.warning("Naukri: failed to parse detail response for jobId=%s: %s", job_id, exc)
         return ""
+
+
+def lazy_fetch_naukri_detail(job: dict) -> str:
+    """
+    Lazy detail fetch — called by scorer.py AFTER prefilter passes the job.
+
+    Only fires for jobs that have a `_naukri_job_id` key and a short
+    description (< 150 chars), i.e. still holding the truncated snippet.
+    This is intentionally analogous to freshers_blogs.fetch_full_description().
+
+    Returns the full plain-text JD on success, or "" if unavailable.
+    The caller (scorer.py) replaces job["description"] with the result.
+    """
+    job_id = job.get("_naukri_job_id", "")
+    if not job_id:
+        return ""
+    desc = job.get("description", "")
+    if len(desc) >= 150:
+        return desc   # Already have enough — skip network call
+    time.sleep(_INTER_REQUEST_DELAY)  # polite delay BEFORE the call
+    return _fetch_job_detail(job_id)
 
 
 # -----------------------------------------------------------------
@@ -483,31 +509,14 @@ def fetch_naukri(profile: dict = None) -> list:
         len(stage1_jobs), max_exp_years, max_age_days,
     )
 
-    if not stage1_jobs:
-        return []
-
-    # ---- Step 2: Fetch full JDs for surviving jobs -----------------------
-    final_jobs: list = []
-
+    # Strip the internal job ID key — not needed downstream (full JD fetch removed).
+    # Jobs carry the Stage-1 snippet as description; prefilter and AI scorer use that.
     for job in stage1_jobs:
-        job_id = job.pop("_naukri_job_id", "")   # remove internal key
+        job.pop("_naukri_job_id", None)
 
-        if job_id:
-            time.sleep(_INTER_REQUEST_DELAY)
-            full_jd = _fetch_job_detail(job_id)
-            if full_jd:
-                job["description"] = full_jd
-            else:
-                # Graceful fallback — truncated snippet already in job["description"]
-                logger.debug(
-                    "Naukri: detail API failed for jobId=%s (%r) — using snippet fallback",
-                    job_id, job.get("title", ""),
-                )
+    logger.info("Naukri: %d jobs entering pipeline", len(stage1_jobs))
 
-        final_jobs.append(job)
-
-    logger.info("Naukri: %d jobs ready for pipeline (Step 2 complete)", len(final_jobs))
-    return final_jobs
+    return stage1_jobs
 
 
 # -----------------------------------------------------------------

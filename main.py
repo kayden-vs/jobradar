@@ -1,5 +1,4 @@
 import logging
-import asyncio
 import os
 import sys
 from logging.handlers import RotatingFileHandler
@@ -7,7 +6,27 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Ensure data/ directory exists before FileHandler tries to open the log file
+# ─────────────────────────────────────────────────────────────────
+# CLI ARGS — parsed before imports so logging can be per-user
+#
+# Usage:
+#   python main.py                    # defaults to profile.yaml
+#   python main.py profile.yaml
+#   python main.py profile.yaml --dry-run
+# ─────────────────────────────────────────────────────────────────
+_profile_path = "profile.yaml"
+_dry_run = False
+for _arg in sys.argv[1:]:
+    if _arg == "--dry-run":
+        _dry_run = True
+    elif not _arg.startswith("--"):
+        _profile_path = _arg
+
+# Derive a short username from the profile filename for per-user log naming
+# e.g. "profile.yaml" → "profile"
+_username = os.path.splitext(os.path.basename(_profile_path))[0]
+
+# Ensure data/ exists before FileHandler tries to open the log file
 os.makedirs("data", exist_ok=True)
 
 # Force UTF-8 on Windows console to prevent cp1252 UnicodeEncodeError
@@ -15,23 +34,19 @@ stream_handler = logging.StreamHandler(stream=open(
     sys.stdout.fileno(), 'w', encoding='utf-8', closefd=False
 ))
 
-# Rotating log: max 1 MB per file, keep last 3 files (jobradar.log, .1, .2)
-# — prevents unbounded growth on AWS while retaining ~3 runs of history.
+# Per-user rotating log: data/<username>.log
+# max 1 MB per file, keep last 3 files — prevents unbounded growth on AWS
 file_handler = RotatingFileHandler(
-    "data/jobradar.log",
+    f"data/{_username}.log",
     maxBytes   = 1 * 1024 * 1024,   # 1 MB
     backupCount= 3,
     encoding   = "utf-8",
 )
 
-# Configure logging
 logging.basicConfig(
     level   = logging.INFO,
     format  = "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    handlers=[
-        stream_handler,
-        file_handler,
-    ]
+    handlers=[stream_handler, file_handler],
 )
 logger = logging.getLogger("jobradar")
 
@@ -51,29 +66,75 @@ from sources.hirist import fetch_hirist
 from pipeline.dedup import deduplicate
 from pipeline.prefilter import prefilter, load_profile
 from pipeline.scorer import score_all
-from notify.telegram_bot import notify_urgent_jobs, send_run_summary
+from notify.telegram_bot import notify_urgent_jobs, send_session_divider
 
 
-def run():
+def _print_dry_run_summary(profile: dict, db_path: str, chat_id: str, profile_path: str):
+    """Print a config summary and exit — no API calls made."""
+    candidate = profile.get("candidate", {})
+    sources   = profile.get("sources", {})
+    enabled   = [s for s, v in sources.items() if isinstance(v, bool) and v]
+    disabled  = [s for s, v in sources.items() if isinstance(v, bool) and not v]
+    hr        = profile.get("hard_reject", {})
+
+    print("\n" + "=" * 55)
+    print("  DRY RUN - JobRadar profile check")
+    print("=" * 55)
+    print(f"  Profile file : {profile_path}")
+    print(f"  Candidate    : {candidate.get('name', '?')}")
+    print(f"  Education    : {candidate.get('education', {}).get('graduation', '?')}")
+    print(f"  Database     : {db_path}")
+    print(f"  Telegram ID  : {chat_id or 'NOT SET - notifications will fail'}")
+    print(f"  Sources ON   : {', '.join(enabled) or 'none'}")
+    print(f"  Sources OFF  : {', '.join(disabled) or 'none'}")
+    print(f"  Max job age  : {hr.get('max_job_age_days', '?')} days")
+    print(f"  AI cap       : {hr.get('max_ai_jobs_per_run', '?')} jobs/run")
+    print(f"  ATS cap/co   : {hr.get('ats_per_company_cap', '?')} jobs/company")
+    print(f"  Min stipend  : Rs.{candidate.get('salary', {}).get('min_stipend_inr', '?')}/mo")
+    skills = candidate.get("skills", {})
+    print(f"  Strong stack : {', '.join(skills.get('strong', []))}")
+    print("=" * 55)
+    print("  OK Config loaded and DB initialised - no API calls made.\n")
+
+
+def run(profile_path: str, dry_run: bool = False):
     logger.info("=" * 50)
-    logger.info("JobRadar pipeline starting")
+    logger.info(f"JobRadar pipeline starting — profile: {profile_path}")
     logger.info("=" * 50)
 
-    # --- Setup ---
-    init_db()
-    profile   = load_profile()
+    # ── Setup: load profile, extract per-user routing info ───────────────────
+    profile = load_profile(profile_path)
+    db_path = profile.get("db_path", f"data/{_username}.db")
+    chat_id = str(profile.get("telegram_chat_id", "")).strip()
+
+    init_db(db_path)
+
+    if not chat_id:
+        logger.warning(
+            "telegram_chat_id is not set in profile — Telegram notifications will fail"
+        )
+
+    # ── Dry-run: validate config and exit without hitting any APIs ────────────
+    if dry_run:
+        logger.info("Dry run requested — skipping all API calls")
+        _print_dry_run_summary(profile, db_path, chat_id, profile_path)
+        return
+
     companies = load_companies()
 
-    # --- SOURCE LAYER ---
+    # ── SOURCE LAYER ──────────────────────────────────────────────────────────
     # Control which sources run via profile.yaml `sources:` block.
     sources_cfg = profile.get("sources", {})
 
     def source_enabled(name: str) -> bool:
-        """Returns True unless the source is explicitly set to false."""
-        enabled = sources_cfg.get(name, True)
-        if not enabled:
-            logger.info(f"--- Skipping {name} (disabled in profile.yaml) ---")
-        return enabled
+        """Returns True unless the source is explicitly set to false.
+        Non-boolean config keys (like serper_max_calls) are ignored."""
+        val = sources_cfg.get(name, True)
+        if not isinstance(val, bool):
+            return True     # not a toggle — treat as enabled
+        if not val:
+            logger.info(f"--- Skipping {name} (disabled in profile) ---")
+        return val
 
     raw_jobs = []
 
@@ -128,56 +189,47 @@ def run():
     total_raw = len(raw_jobs)
     logger.info(f"Total raw jobs from all sources: {total_raw}")
 
-    # --- DEDUPLICATION ---
-    new_jobs = deduplicate(raw_jobs)
+    # ── DEDUPLICATION ─────────────────────────────────────────────────────────
+    new_jobs = deduplicate(raw_jobs, db_path)
 
-    # --- PRE-FILTER ---
+    # ── PRE-FILTER ────────────────────────────────────────────────────────────
     # Drops ~90% of remaining jobs with zero AI cost
     eligible_jobs = prefilter(new_jobs, profile)
 
     if not eligible_jobs:
         logger.info("No new eligible jobs after pre-filter. Done.")
-        asyncio.run(send_run_summary(total_raw=total_raw, passed_filter=0, scored=0, urgent=0))
+        send_session_divider(total_raw=total_raw, passed=0, scored=0, urgent=0, chat_id=chat_id)
         return
 
-    # --- GLOBAL SCORER CAP ---
-    # Last-resort budget guard: if pre-filter still lets through more than
-    # max_ai_jobs_per_run jobs, keep only the freshest ones.
-    max_ai_jobs = profile.get("hard_reject", {}).get("max_ai_jobs_per_run", 80)
-    if len(eligible_jobs) > max_ai_jobs:
-        # Sort by posted_at descending (newest first); missing dates go to end
-        def _sort_key(j):
-            pa = j.get("posted_at", "")
-            return pa if pa else "0"
-        eligible_jobs.sort(key=_sort_key, reverse=True)
-        dropped = len(eligible_jobs) - max_ai_jobs
-        eligible_jobs = eligible_jobs[:max_ai_jobs]
-        logger.info(
-            f"Scorer cap: dropped {dropped} oldest jobs — sending {max_ai_jobs} to AI"
-        )
+    # ── AI SCORING ────────────────────────────────────────────────────────────
+    # score_all() handles:
+    #   1. Heuristic relevance ranking (best-fit jobs scored first)
+    #   2. Token budget guard (stops before hitting Groq's 30K TPM)
+    #   3. Hard fallback cap (max_ai_jobs_per_run in profile.yaml)
+    urgent_jobs, digest_jobs, low_jobs = score_all(eligible_jobs, profile, db_path)
 
-    # --- AI SCORING ---
-    urgent_jobs, digest_jobs, low_jobs = score_all(eligible_jobs)
-
-    # --- NOTIFICATIONS ---
+    # ── NOTIFICATIONS ─────────────────────────────────────────────────────────
     if urgent_jobs:
         logger.info(f"Sending {len(urgent_jobs)} urgent Telegram alerts")
-        notify_urgent_jobs(urgent_jobs)
+        notify_urgent_jobs(urgent_jobs, chat_id)
 
     # Session-end divider — always the last message, carries stats for the run.
     # Sent even when urgent=0 so there's always a visible session boundary.
     scored_count = len(urgent_jobs) + len(digest_jobs) + len(low_jobs)
-    asyncio.run(send_run_summary(
-        total_raw    = total_raw,
-        passed_filter = len(eligible_jobs),
-        scored       = scored_count,
-        urgent       = len(urgent_jobs),
-    ))
+    send_session_divider(
+        total_raw = total_raw,
+        passed    = len(eligible_jobs),
+        scored    = scored_count,
+        urgent    = len(urgent_jobs),
+        chat_id   = chat_id,
+    )
 
     logger.info("Pipeline complete.")
-    logger.info(f"Summary: {total_raw} raw -> {len(new_jobs)} new -> {len(eligible_jobs)} eligible -> {len(urgent_jobs)} urgent")
-
+    logger.info(
+        f"Summary: {total_raw} raw -> {len(new_jobs)} new -> "
+        f"{len(eligible_jobs)} eligible -> {len(urgent_jobs)} urgent"
+    )
 
 
 if __name__ == "__main__":
-    run()
+    run(_profile_path, _dry_run)

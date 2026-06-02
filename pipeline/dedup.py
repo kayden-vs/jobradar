@@ -4,15 +4,11 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def deduplicate(jobs: list[dict], db_path: str) -> list[dict]:
+def deduplicate(jobs: list[dict], db_path: str | None = None) -> list[dict]:
     """
     Removes:
     1. Jobs already seen in the database (persisted dedup)
     2. Duplicates within the current batch (in-memory dedup)
-
-    Args:
-        jobs:    Raw job list from all sources.
-        db_path: Path to the user's SQLite file — dedup is per-user.
     """
     seen_this_run = set()
     new_jobs = []
