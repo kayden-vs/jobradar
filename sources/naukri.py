@@ -509,15 +509,13 @@ def fetch_naukri(profile: dict = None) -> list:
         len(stage1_jobs), max_exp_years, max_age_days,
     )
 
-    # Step 2 (full JD fetch) is LAZY — deferred to scorer.py.
-    # Only jobs that survive prefilter will trigger a detail API call,
-    # avoiding 153× detail fetches when prefilter drops ~90% of them.
-    # Each surviving job keeps `_naukri_job_id` so scorer.py can call
-    # lazy_fetch_naukri_detail() right before AI scoring.
-    logger.info(
-        "Naukri: %d jobs entering pipeline (full JDs fetched lazily after prefilter)",
-        len(stage1_jobs),
-    )
+    # Strip the internal job ID key — not needed downstream (full JD fetch removed).
+    # Jobs carry the Stage-1 snippet as description; prefilter and AI scorer use that.
+    for job in stage1_jobs:
+        job.pop("_naukri_job_id", None)
+
+    logger.info("Naukri: %d jobs entering pipeline", len(stage1_jobs))
+
     return stage1_jobs
 
 
