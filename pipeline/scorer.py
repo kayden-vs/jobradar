@@ -9,7 +9,9 @@ from dateutil import parser as dateutil_parser
 from groq import Groq
 from storage.db import save_job
 from sources.freshers_blogs import fetch_full_description
+from sources.naukri import lazy_fetch_naukri_detail
 from pipeline.prefilter import _CLOSED_PHRASES, _DEADLINE_CONTEXT_RE
+from pipeline.ranker import rank_eligible_jobs
 
 logger = logging.getLogger(__name__)
 
@@ -21,8 +23,46 @@ logger = logging.getLogger(__name__)
 # Quality: Llama 4 MoE architecture — better than 8B, close to 70B
 # ─────────────────────────────────────────────────────────────────
 MODEL        = "meta-llama/llama-4-scout-17b-16e-instruct"
-REQ_INTERVAL = 3.0        # seconds between scoring calls
+REQ_INTERVAL = 3.6        # seconds between scoring calls
+                           # 60s / 3.6 = 16.7 req/min × ~1750 tokens = ~29K TPM
+                           # Keeps us just under Groq's 30K TPM hard limit.
 _last_call_ts = 0.0        # module-level timestamp tracker
+
+# ─────────────────────────────────────────────────────────────────
+# TWO-LAYER RATE SYSTEM
+#
+# Groq free-tier limits for llama-4-scout:
+#   TPM  = 30,000 tokens / minute   ← per-minute rate limit
+#   TPD  = 500,000 tokens / day     ← daily hard ceiling
+#   RPD  = 1,000 requests / day
+#
+# Pipeline: 2 runs/day  ⇒  per-run daily budget = 500K ÷ 2 = 250K.
+# With 20% safety margin: 200K usable tokens per run.
+#
+# Layer 1 — Per-minute (TPM): handled by REQ_INTERVAL throttle.
+#   Each job costs ~1,750 tokens worst-case.
+#   16.7 req/min (3.6s gap) × 1,750 = ~29,200 TPM → safely under 30K.
+#
+# Layer 2 — Per-run daily budget: TOKEN_BUDGET_PER_RUN.
+#   This is NOT a per-minute cap. A run of 114 jobs takes ~6.8 min,
+#   spanning multiple TPM windows. The total budget for that whole run
+#   is 200K tokens (80% of 250K half-day allocation).
+#   This guards against accidentally scoring thousands of jobs if the
+#   pre-filter is overly permissive.
+#
+# Per-job cost breakdown:
+#   System prompt + few-shot examples : ~500 tokens  (Groq may cache)
+#   User prompt (profile + JD 3000 ch): ~1150 tokens average
+#   Response (max_tokens=600)          :  600 tokens
+#   ──────────────────────────────────────────────────
+#   Total per job                      : ~1750 tokens worst-case
+#   Max jobs per run at 200K budget    : ~114 jobs
+#   Run duration for 114 jobs          : ~6.8 minutes
+# ─────────────────────────────────────────────────────────────────
+TOKEN_BUDGET_PER_RUN  = 200_000  # 80% of (500K TPD ÷ 2 runs/day) — per-run ceiling
+SYSTEM_PROMPT_TOKENS  = 500      # fixed overhead: system msg + few-shot
+RESPONSE_TOKENS       = 600      # max_tokens setting
+CHARS_PER_TOKEN       = 4        # standard approximation (1 token ≈ 4 chars)
 
 
 def _groq_client() -> Groq:
@@ -188,7 +228,7 @@ Return ONLY a valid JSON object, no markdown fences:
 def score_job(job: dict, profile: dict) -> dict:
     """Score a single job with Groq llama-4-scout."""
 
-    # ── Lazy description fetch ────────────────────────────────────────────────
+    # ── Lazy description fetch (freshers_blogs) ──────────────────────────────────
     # freshers_blogs sources return empty/partial descriptions intentionally
     # (avoids fetching hundreds of post pages upfront). After pre-filter confirms
     # this job is worth scoring, fetch the full body now.
@@ -200,6 +240,18 @@ def score_job(job: dict, profile: dict) -> dict:
         if fetched:
             job["description"] = fetched
             desc = job["description"]
+
+    # ── Lazy description fetch (naukri) ───────────────────────────────────────
+    # Naukri Stage-1 returns truncated snippets only. The full JD is fetched
+    # HERE (after prefilter) to avoid calling the detail API for the ~90% of
+    # jobs that prefilter drops. `_naukri_job_id` is the trigger key.
+    if job.get("_naukri_job_id") and len(desc) < 150:
+        logger.debug(f"Lazy-fetching Naukri JD for {job.get('title', '?')}")
+        fetched = lazy_fetch_naukri_detail(job)
+        if fetched:
+            job["description"] = fetched
+            desc = job["description"]
+    job.pop("_naukri_job_id", None)   # strip internal key before any persistence
 
     # ── Pre-Groq expiry scan on fetched description ───────────────────────────
     # After fetching the full body, scan for closure/deadline signals.
@@ -297,14 +349,41 @@ def score_job(job: dict, profile: dict) -> dict:
         return job
 
 
+def _estimate_prompt_tokens(job: dict) -> int:
+    """
+    Estimate the token cost for scoring one job.
+
+    Formula:
+      system prompt (fixed)  : SYSTEM_PROMPT_TOKENS
+      user prompt (variable) : base overhead + description chars / CHARS_PER_TOKEN
+      response               : RESPONSE_TOKENS (max_tokens setting)
+
+    This is intentionally approximate — character/4 is the standard heuristic.
+    We budget conservatively so we never hit the actual limit.
+    """
+    desc_chars = len(job.get("description", "")[:3000])  # scorer truncates at 3000
+    # ~400 chars of non-description prompt overhead (title, company, profile fields)
+    user_prompt_tokens = (desc_chars + 400) // CHARS_PER_TOKEN
+    return SYSTEM_PROMPT_TOKENS + user_prompt_tokens + RESPONSE_TOKENS
+
+
 def score_all(
     jobs: list[dict],
     profile: dict | None = None,
     db_path: str | None = None,
 ) -> tuple[list[dict], list[dict], list[dict]]:
     """
-    Score all eligible jobs and split into buckets.
-    Throttled to 1 req per 3 sec to stay under Groq's 30 req/min limit.
+    Rank, then score eligible jobs within a token budget.
+
+    Pipeline:
+      1. Heuristic relevance ranking  — best-match jobs first (zero AI cost).
+      2. Token budget guard           — stop before hitting Groq's 30K TPM.
+      3. Hard fallback cap            — profile max_ai_jobs_per_run (safety net).
+
+    Why ranking before budget:
+      Jobs without a posted_at date used to be silently dropped because the
+      old approach sorted by date. Now recency is one signal among many —
+      a strong Go/fintech job with no date beats a weak dated job.
 
     Args:
         jobs:     Pre-filtered job dicts to score.
@@ -318,15 +397,53 @@ def score_all(
     if profile is None:
         profile = load_profile()
 
+    # ── Step 1: Heuristic relevance ranking ───────────────────────────────
+    # Sorts jobs so the most promising ones are scored first.
+    # This ensures the token budget is spent on best-fit jobs.
+    jobs = rank_eligible_jobs(jobs)
+
+    # ── Step 2: Hard fallback cap (absolute worst-case guard) ─────────────
+    # Primary guard is the token budget below. This is a last-resort ceiling
+    # in case token estimation is wildly off (e.g. all jobs have huge JDs).
+    max_ai_jobs = profile.get("hard_reject", {}).get("max_ai_jobs_per_run", 200)
+    if len(jobs) > max_ai_jobs:
+        dropped_cap = len(jobs) - max_ai_jobs
+        jobs = jobs[:max_ai_jobs]
+        logger.warning(
+            f"Hard fallback cap: trimmed {dropped_cap} lowest-ranked jobs "
+            f"(max_ai_jobs_per_run={max_ai_jobs}). Increase cap in profile.yaml if needed."
+        )
+
     urgent        : list[dict] = []
     digest        : list[dict] = []
     low           : list[dict] = []
     expired_count : int        = 0
+    tokens_used   : int        = 0
+    budget_skipped: int        = 0
 
-    logger.info(f"Scoring {len(jobs)} eligible jobs with Groq ({MODEL})")
+    logger.info(
+        f"Scoring up to {len(jobs)} ranked jobs with Groq ({MODEL}) "
+        f"| token budget: {TOKEN_BUDGET_PER_RUN:,}"
+    )
 
     for job in jobs:
+        # ── Step 3: Token budget check ─────────────────────────────────────
+        job_tokens = _estimate_prompt_tokens(job)
+        if tokens_used + job_tokens > TOKEN_BUDGET_PER_RUN:
+            budget_skipped += 1
+            logger.debug(
+                f"Budget skip: '{job.get('title','?')}' would cost ~{job_tokens} tokens "
+                f"(used {tokens_used:,}/{TOKEN_BUDGET_PER_RUN:,}) — heuristic score: "
+                f"{job.get('_heuristic_score', '?')}"
+            )
+            continue
+
+        tokens_used += job_tokens
         scored_job = score_job(job, profile)
+
+        # Strip internal heuristic keys before DB persistence
+        scored_job.pop("_heuristic_score", None)
+        scored_job.pop("_heuristic_reasons", None)
 
         # Hard drop: expired jobs are never sent anywhere
         if scored_job.get("expired") or scored_job.get("urgency") == "expired":
@@ -352,6 +469,14 @@ def score_all(
             digest.append(scored_job)
         else:
             low.append(scored_job)
+
+    if budget_skipped:
+        logger.info(
+            f"Token budget: {tokens_used:,}/{TOKEN_BUDGET_PER_RUN:,} tokens used. "
+            f"Skipped {budget_skipped} lower-ranked jobs to stay under limit."
+        )
+    else:
+        logger.info(f"Token budget: {tokens_used:,}/{TOKEN_BUDGET_PER_RUN:,} tokens used (all jobs scored).")
 
     logger.info(
         f"Scoring complete: {len(urgent)} urgent, {len(digest)} digest, "

@@ -201,23 +201,11 @@ def run(profile_path: str, dry_run: bool = False):
         send_session_divider(total_raw=total_raw, passed=0, scored=0, urgent=0, chat_id=chat_id)
         return
 
-    # ── GLOBAL SCORER CAP ─────────────────────────────────────────────────────
-    # Last-resort budget guard: if pre-filter still lets through more than
-    # max_ai_jobs_per_run jobs, keep only the freshest ones.
-    max_ai_jobs = profile.get("hard_reject", {}).get("max_ai_jobs_per_run", 80)
-    if len(eligible_jobs) > max_ai_jobs:
-        # Sort by posted_at descending (newest first); missing dates go to end
-        def _sort_key(j):
-            pa = j.get("posted_at", "")
-            return pa if pa else "0"
-        eligible_jobs.sort(key=_sort_key, reverse=True)
-        dropped = len(eligible_jobs) - max_ai_jobs
-        eligible_jobs = eligible_jobs[:max_ai_jobs]
-        logger.info(
-            f"Scorer cap: dropped {dropped} oldest jobs — sending {max_ai_jobs} to AI"
-        )
-
     # ── AI SCORING ────────────────────────────────────────────────────────────
+    # score_all() handles:
+    #   1. Heuristic relevance ranking (best-fit jobs scored first)
+    #   2. Token budget guard (stops before hitting Groq's 30K TPM)
+    #   3. Hard fallback cap (max_ai_jobs_per_run in profile.yaml)
     urgent_jobs, digest_jobs, low_jobs = score_all(eligible_jobs, profile, db_path)
 
     # ── NOTIFICATIONS ─────────────────────────────────────────────────────────
