@@ -63,10 +63,7 @@ def format_job_message(job: dict) -> str:
     if red_flag_lines:
         msg += f"*Watch out:*\n{red_flag_lines}\n"
 
-    # Application angle — only present for score>=8 jobs
-    apply_angle = (job.get("apply_angle") or "").strip()
-    if apply_angle:
-        msg += f"💡 *Pitch angle:* {_esc(apply_angle)}\n\n"
+
 
     url    = job.get('url', '')
     source = job.get('source', 'unknown')

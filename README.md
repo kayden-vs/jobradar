@@ -162,7 +162,6 @@ Before any AI call, every eligible job gets a fast Python relevance score. This 
 - **Token-saving rules**: Jobs scoring < 6 return empty `reason`, `highlights`, `red_flags` — cuts response tokens by ~90% for low-relevance jobs.
 - **Pre-Groq expiry scan**: After lazy JD fetch, scans the full description for closure/deadline signals before making any Groq call — saves tokens on stale freshers blog posts.
 - **Lazy JD fetch**: `freshers_blogs` sources fetch full post pages only *after* a job survives prefilter — not upfront for all 8,000 raw jobs.
-- **apply_angle field**: For score ≥ 8 only — one actionable sentence about what to emphasise in the cover note, referencing specific projects.
 
 **Score buckets**:
 - `8–10` → Urgent: instant Telegram push notification
