@@ -57,18 +57,29 @@ Built for freshers, interns, and early-career developers targeting backend, soft
 ### 🔌 12 Job Sources — Rich & Redundant
 
 **Structured ATS APIs** (via `sources/ats.py`):
-Direct API polling of four major Applicant Tracking Systems, no scraping needed:
-- **Greenhouse** (US + EU endpoints) — the most common ATS at funded startups
-- **Lever** — popular at Series A/B companies, millisecond-epoch timestamps handled
-- **Ashby** — modern ATS used by many YC-backed companies
-- **Workable** — common at Indian-market companies
+Direct structured API polling of **9 ATS platforms** — no scraping, no JS rendering, full coverage for every listed company:
 
-Each ATS company is listed in `companies.yaml`. Per-company caps prevent any single large company (e.g. GitLab, Stripe) from dominating the scoring budget. Full JDs are always available from the structured API.
+| Platform | Companies (examples) | Notes |
+|---|---|---|
+| **Greenhouse US** | Razorpay, PhonePe, Stripe, GitLab, Cloudflare, MongoDB | `?content=true` returns full JD in one call |
+| **Greenhouse EU** | Groww | European instance, separate endpoint |
+| **Lever** | Meesho, CRED, Paytm, Spotify, Binance | Full JD + lists in single response |
+| **Ashby** | Navi, Linear, Notion, Supabase, Railway | `descriptionPlain` pre-stripped |
+| **Workable** | Juspay, Gridlines, Apna | Secondary detail call for full JD |
+| **SmartRecruiters** | Upstox, Freshworks, Canva, Cars24, ixigo | Structured per-section JD |
+| **Rippling** | Axio, Multiplier, Dub | Job UUID detail endpoint |
+| **BambooHR** | Urban Company, Shadowfax, Google, Meta | Subdomain-based URLs |
+| **Recruitee** | Unstop, Salesforce, IBM | Inline HTML description in list response |
+| **Personio** | Open Financial, Amazon, Basecamp | Public XML feed, no auth |
+
+All companies are listed in `companies.yaml`. Per-company caps prevent any single large company (e.g. GitLab, Stripe) from dominating the scoring budget.
 
 **Naukri.com** (`sources/naukri.py`):
-India's largest job board. Two-stage pipeline:
-- Stage 1: Search API with `keyword × location × page` grid (10 keywords × 3 locations × 2 pages = up to 1,200 raw cards), with in-line experience and age filters to avoid wasting downstream budget.
-- Configurable per `profile.yaml → naukri:` block (keywords, locations, pages, exp range).
+India's largest job board. Stage-1 filtered search pipeline:
+- **Search API grid**: 10 keywords × 3 locations × 2 pages = up to 1,200 raw cards per run
+- **Stage-1 in-line filters**: experience cap and age cap applied immediately at search time — stale and overqualified jobs are dropped before they enter the pipeline
+- Jobs enter the pipeline with Stage-1 snippet descriptions (100–300 chars), sufficient for prefilter and heuristic ranking
+- Configurable per `profile.yaml → naukri:` block (keywords, locations, pages)
 
 **Hirist.tech** (`sources/hirist.py`):
 India-specific niche tech job board targeting backend, Golang, Python, and TypeScript roles. JS-rendered page handled with full detail page fetching.
@@ -80,12 +91,20 @@ Scrapes the YC job board with two-phase architecture: card listing → full JD f
 India's #1 internship and fresher job platform. Highly optimized plain-HTTP parser — bypasses browser overhead entirely. Filters by category (software, web dev) and experience label.
 
 **Indian Fresher Blogs RSS Aggregator** (`sources/freshers_blogs.py`):
-Aggregates 8+ high-volume off-campus WordPress job blogs concurrently using `ThreadPoolExecutor`. Extracts rich WordPress RSS tag metadata (`entry.tags`) — experience level, graduation batch year, and location tags — enabling zero-network-cost pre-filtering directly from feed data.
+Aggregates 8+ high-volume off-campus WordPress job blogs concurrently using `ThreadPoolExecutor`. Extracts rich WordPress RSS tag metadata (`entry.tags`) — experience level, graduation batch year, and location tags — enabling zero-network-cost pre-filtering directly from feed data. Full post pages are fetched **lazily** (only after a job survives prefilter), not upfront for all 8,000+ raw entries.
 
 Included blogs: Freshers360, GeeksforGeeks Jobs, Freshersnow, Sarkari Result (IT section), Unstop, Cuvette.tech, and others.
 
 **Serper.dev Search Discovery** (`sources/serper.py`):
-Runs structured Google search dorks (e.g. `site:greenhouse.io "backend intern" india`) to discover jobs that don't appear on aggregators. Configurable max call budget per run.
+The key insight: `ats.py` already covers 9 ATS platforms via structured API with 100% coverage for listed companies. Running `site:greenhouse.io` or `site:lever.co` dorks would just re-discover the same jobs through Google's partial index — pure waste. Instead, Serper is laser-focused on what **only it** can find:
+
+| Tier | Queries | What it hunts |
+|---|---|---|
+| **Tier 1** (guaranteed 10 slots) | 26 queries | Company-owned `/careers` pages (explicit ATS exclusions), Indian ATS not in `companies.yaml` (Keka, Freshteam, Zoho Recruit, Cutshort), hidden applications (Google Forms, Notion, Typeform) |
+| **Tier 2** (fill 15 slots) | 47 queries | Go/Golang-specific, TypeScript/Node, Fintech/Crypto/Payments, Remote-first global startups, career page searches with ATS exclusions |
+| **Tier 3** (filler only) | 31 queries | Greenhouse/Lever `site:` queries — kept for marginal company-discovery value (new companies not in `companies.yaml`) but gets 0 slots when Tier 2 is not exhausted |
+
+25 calls/run × 2 runs/day × 30 days = 1,500 credits/month (60% of 2,500 free tier). Queries are shuffled within each tier so the full pool gets coverage over many runs.
 
 **HackerNews "Who is Hiring?"** (`sources/hackernews.py`):
 Parses the monthly Ask HN hiring thread via the official Algolia HN search API. **Self-healing auto-discovery**: if the current month's thread ID isn't configured, it automatically queries Algolia to find it — no manual updates ever needed.
@@ -152,16 +171,19 @@ Before any AI call, every eligible job gets a fast Python relevance score. This 
 
 | Layer | Mechanism | Value |
 |---|---|---|
-| Per-minute (TPM) | `REQ_INTERVAL` throttle | 5.0s gap → 12 req/min → 28,800 TPM (safely under 30K) |
+| Per-minute (TPM) | `REQ_INTERVAL` throttle | 5.0s gap → 12 req/min → 28,800 TPM (safely under 30K limit) |
 | Per-run daily budget | `TOKEN_BUDGET_PER_RUN` | 200,000 tokens (80% of 500K TPD ÷ 2 runs/day) |
 
-**Observed actual token cost**: ~2,240 tokens/call (system prompt + few-shot examples + full scoring rules + profile + JD + response).
+**Observed actual token cost**: ~2,240 tokens/call (system prompt + few-shot calibration examples + full scoring rules + candidate profile + JD + response). The 5.0s interval was calibrated from real run data — the previous 3.6s interval was hitting 37K TPM and consistently exceeding the 30K limit.
 
 **Scoring features**:
+- **Heuristic pre-sort**: Jobs are ranked by `pipeline/ranker.py` before any AI call. The token budget is spent on the highest-signal jobs first — Go/TS stack, fintech domain, recency, fresher-targeted titles.
 - **Few-shot calibration**: Two fixed examples (score 9 and score 3) embedded in the system prompt anchor the scale so the model doesn't drift across runs.
 - **Token-saving rules**: Jobs scoring < 6 return empty `reason`, `highlights`, `red_flags` — cuts response tokens by ~90% for low-relevance jobs.
 - **Pre-Groq expiry scan**: After lazy JD fetch, scans the full description for closure/deadline signals before making any Groq call — saves tokens on stale freshers blog posts.
-- **Lazy JD fetch**: `freshers_blogs` sources fetch full post pages only *after* a job survives prefilter — not upfront for all 8,000 raw jobs.
+- **Lazy JD fetch**: `freshers_blogs` sources fetch full post pages only *after* a job survives prefilter — not upfront for all 8,000+ raw jobs.
+- **`apply_angle` field**: For score ≥ 8 only — one actionable sentence about what to emphasise in the cover note, referencing specific resume projects.
+- **Hard fallback cap**: `max_ai_jobs_per_run: 200` in `profile.yaml` — safety net in case prefilter is overly permissive. Primary guard is the token budget.
 
 **Score buckets**:
 - `8–10` → Urgent: instant Telegram push notification
@@ -190,16 +212,16 @@ jobradar/
 ├── main.py                    # Entry point — orchestrates the full pipeline
 │
 ├── profile.yaml               # ← YOUR MAIN CONFIG FILE (roles, skills, location, filters)
-├── companies.yaml             # ATS company slugs (Greenhouse / Lever / Ashby / Workable)
+├── companies.yaml             # ATS company slugs — 9 platforms (Greenhouse/Lever/Ashby/Workable/SmartRecruiters/Rippling/BambooHR/Recruitee/Personio)
 │
 ├── sources/                   # Job fetchers — one file per source
-│   ├── ats.py                 # Greenhouse (US+EU) / Lever / Ashby / Workable API polling
-│   ├── naukri.py              # Naukri.com — two-stage search+detail API (Stage-1 filtered)
+│   ├── ats.py                 # 9-platform ATS polling: Greenhouse (US+EU) / Lever / Ashby / Workable / SmartRecruiters / Rippling / BambooHR / Recruitee / Personio
+│   ├── naukri.py              # Naukri.com — Stage-1 filtered search (snippets, no Step-2 detail fetch)
 │   ├── hirist.py              # Hirist.tech — India niche tech board (JS-rendered)
 │   ├── yc.py                  # YC jobs board — two-phase scraper (cards → full JD)
 │   ├── internshala.py         # Internshala — optimized plain-HTTP scraper
 │   ├── freshers_blogs.py      # 8+ Indian fresher blogs — concurrent RSS + lazy JD fetch
-│   ├── serper.py              # Google dork discovery via Serper.dev
+│   ├── serper.py              # Tiered Google dork discovery — Tier 1: owned career pages + alt ATS + hidden apps
 │   ├── hackernews.py          # HN "Who is Hiring?" — Algolia auto-discovery
 │   ├── reddit.py              # Reddit RSS feeds
 │   ├── cutshort.py            # Cutshort.io API (currently disabled)
@@ -345,7 +367,7 @@ Register-ScheduledTask -TaskName "JobRadar" -Action $action -Trigger $trigger -R
 | API | Observed usage/run | Free tier | Headroom |
 |:---|:---|:---|:---|
 | **Groq (llama-4-scout)** | ~200K tokens | 500K tokens/day | 2 runs/day at full budget |
-| **Serper.dev** | 10–20 queries | 2,500 queries/month | ~75–125 runs/month |
+| **Serper.dev** | 25 queries | 2,500 queries/month | 1,500/month = 60% of free tier |
 | **Telegram Bot** | ~10–15 messages | Unlimited | Free |
 
 **Groq rate limits** (llama-4-scout free tier):
@@ -357,13 +379,19 @@ Register-ScheduledTask -TaskName "JobRadar" -Action $action -Trigger $trigger -R
 
 ## 🛠️ Maintenance & Tuning
 
-- **Adding ATS companies**: Add to `companies.yaml`. Verify the slug first:
+- **Adding ATS companies**: Add the slug to the correct section in `companies.yaml`. Verify first:
   ```bash
-  curl -s "https://boards-api.greenhouse.io/v1/boards/SLUG/jobs" | python -m json.tool | head -20
-  curl -s "https://api.lever.co/v0/postings/SLUG" | python -m json.tool | head -20
+  # Greenhouse
+  curl -s "https://boards.greenhouse.io/v1/boards/SLUG/jobs" | python -m json.tool | head -5
+  # Lever
+  curl -s "https://api.lever.co/v0/postings/SLUG" | python -m json.tool | head -5
+  # SmartRecruiters
+  curl -s "https://api.smartrecruiters.com/v1/companies/SLUG/postings" | python -m json.tool | head -5
   ```
 - **Tuning pre-filter**: Adjust `hard_reject.experience_keywords` and `hard_reject.role_blacklist` in `profile.yaml` if too many irrelevant jobs slip through.
+- **Tuning the ranker**: Edit `pipeline/ranker.py` signals to weight different stacks or domains higher. Adding a signal costs nothing — it's pure Python with no network calls.
 - **Naukri config**: Add more keywords or locations under `profile.yaml → naukri:` to increase coverage. Each page = up to 20 listings; each keyword × location combo = 2 pages by default.
+- **Serper budget**: `MAX_SERPER_CALLS` (default 25) and `TIER_1_BUDGET` (default 10) in `sources/serper.py`. Tier 1 budget ensures the unique sources always run regardless of total cap.
 - **Per-user profiles**: Run `python main.py my_profile.yaml` to use a different profile file. Each profile gets its own DB and log file under `data/`.
 
 ---
