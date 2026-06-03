@@ -118,8 +118,6 @@ Description excerpt: "We're building a high-throughput order matching engine in 
   Stipend above minimum. Only reason it isn't 10: no mention of equity/ESOPs and
   company is less well-known.
 → apply_urgency: "high"
-→ apply_angle: "Lead with the Zaraba crypto exchange — matching engine and gRPC
-  architecture are directly relevant. Mention fixed-point arithmetic and Redis."
 
 ### Example B — Score 3 (tech role, poor fit)
 Job: "Junior DevOps Engineer" at TechCorp, Pune (on-site)
@@ -130,7 +128,6 @@ Description excerpt: "2+ years with AWS, Terraform, Jenkins CI/CD pipelines requ
   reject signal). On-site Pune is borderline acceptable but the experience requirement
   alone makes this unfit. Terraform/Jenkins are not in the candidate's stack.
 → apply_urgency: "low"
-→ apply_angle: "" (empty — not worth applying)
 """
 
 
@@ -144,7 +141,7 @@ def build_scoring_prompt(job: dict, profile: dict) -> str:
         for p in candidate.get('projects', [])
     )
 
-    high_score_fields = """  "apply_angle": "<one sentence: what should the candidate emphasize in their cover note / cold email? IF score>=8 ONLY, else empty string>","""
+
 
     return f"""You are a job relevance scorer for a specific candidate. Score how relevant a job posting is for this person.
 
@@ -208,10 +205,8 @@ Mandatory rules — apply in this exact order, override scoring bonuses:
 10. Internshala source with matching stipend (>=10000 INR/month): slight bonus
 
 TOKEN SAVING RULES — IMPORTANT:
-- If score < 6: set reason="", highlights=[], red_flags=[], apply_angle="" — write nothing for these fields.
+- If score < 6: set reason="", highlights=[], red_flags=[] — write nothing for these fields.
 - If score >= 6: fill in reason, highlights, and red_flags normally.
-- If score >= 8: ALSO fill in apply_angle with one actionable sentence about what to emphasise in the cover note or cold email to this company. Reference specific projects/skills where possible.
-- If score < 8: apply_angle must be an empty string "".
 
 Return ONLY a valid JSON object, no markdown fences:
 {{
@@ -220,7 +215,6 @@ Return ONLY a valid JSON object, no markdown fences:
   "reason": "<2-3 sentences IF score>=6, else empty string>",
   "highlights": ["<reason 1>", "<reason 2>", "<reason 3> — IF score>=6, else []"],
   "red_flags": ["<issue if any> — IF score>=6, else []"],
-{high_score_fields}
   "golang_match": <true/false>,
   "fintech_match": <true/false>,
   "apply_urgency": "<high/medium/low/expired>",
@@ -284,7 +278,6 @@ def score_job(job: dict, profile: dict) -> dict:
         job["reason"]      = ""
         job["highlights"]  = ""
         job["red_flags"]   = ""
-        job["apply_angle"] = ""
         job["urgency"]     = "expired"
         return job
 
@@ -314,7 +307,7 @@ def score_job(job: dict, profile: dict) -> dict:
                 },
             ],
             temperature=0.1,   # Low temperature for consistent scoring
-            max_tokens=600,    # +88 vs old 512 to accommodate apply_angle field
+            max_tokens=512,    # Standard token limit since apply_angle is removed
         )
 
         text = response.choices[0].message.content.strip()
@@ -332,12 +325,10 @@ def score_job(job: dict, profile: dict) -> dict:
         job["reason"]      = result.get("reason", "")
         job["highlights"]  = ", ".join(result.get("highlights", []))
         job["red_flags"]   = ", ".join(result.get("red_flags", []))
-        job["apply_angle"] = result.get("apply_angle", "")  # only populated for score>=8
         job["urgency"]     = result.get("apply_urgency", "low")
 
         logger.info(
             f"Scored: {job['title']} @ {job['company']} -> {job['score']}/10 [{job['urgency']}]"
-            + (f" | angle: {job['apply_angle'][:60]}" if job.get("apply_angle") else "")
         )
         return job
 
@@ -347,7 +338,6 @@ def score_job(job: dict, profile: dict) -> dict:
         job["reason"]      = f"Scoring error: {e}"
         job["highlights"]  = ""
         job["red_flags"]   = ""
-        job["apply_angle"] = ""
         job["urgency"]     = "low"
         return job
 
@@ -462,7 +452,6 @@ def score_all(
                 reason      = scored_job.get("reason", ""),
                 highlights  = scored_job.get("highlights", ""),
                 red_flags   = scored_job.get("red_flags", ""),
-                apply_angle = scored_job.get("apply_angle", ""),
                 db_path     = db_path,
             )
 

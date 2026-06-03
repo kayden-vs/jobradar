@@ -113,14 +113,12 @@ def init_db(db_path: str | None = None):
             score_reason TEXT,
             highlights   TEXT,
             red_flags    TEXT,
-            apply_angle  TEXT,              -- application angle for score>=8 jobs
             notified     INTEGER DEFAULT 0   -- 0=no, 1=telegram, 2=digest
         )
     """)
     # Schema migrations — safe no-ops if column already exists
     for col_def in [
         "ALTER TABLE jobs ADD COLUMN url_id TEXT",
-        "ALTER TABLE jobs ADD COLUMN apply_angle TEXT",
     ]:
         try:
             conn.execute(col_def)
@@ -171,7 +169,6 @@ def save_job(
     reason:      str  = "",
     highlights:  str  = "",
     red_flags:   str  = "",
-    apply_angle: str  = "",
     notified:    int  = 0,
     db_path:     str | None = None,
 ):
@@ -187,8 +184,8 @@ def save_job(
         INSERT OR IGNORE INTO jobs
         (id, url_id, title, company, location, description, url, source,
          salary, posted_at, seen_at, score, score_reason, highlights, red_flags,
-         apply_angle, notified)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+         notified)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     """, (
         job_id, url_id,
         job.get("title", ""),
@@ -204,7 +201,6 @@ def save_job(
         reason,
         highlights,
         red_flags,
-        apply_angle,
         notified,
     ))
     conn.commit()
@@ -216,13 +212,13 @@ def get_jobs_by_score(min_score: int = 6, db_path: str | None = None) -> list[di
     conn = sqlite3.connect(_db(db_path))
     rows = conn.execute("""
         SELECT title, company, location, url, salary, score, score_reason,
-               highlights, apply_angle
+               highlights
         FROM jobs WHERE score >= ? AND notified = 0
         ORDER BY score DESC
     """, (min_score,)).fetchall()
     conn.close()
     return [
         dict(zip(["title", "company", "location", "url", "salary",
-                  "score", "reason", "highlights", "apply_angle"], row))
+                  "score", "reason", "highlights"], row))
         for row in rows
     ]
