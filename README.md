@@ -4,6 +4,8 @@ An automated, AI-powered job discovery pipeline that aggregates **12 sources**, 
 
 Built for freshers, interns, and early-career developers — but **fully configurable for any role, stack, domain, or location via `profile.yaml` alone**. A cybersecurity candidate, a data engineer, a mobile developer — no code changes needed.
 
+**New here? Read [`docs/setup_guide.md`](docs/setup_guide.md) first** — it walks you through getting everything running from scratch.
+
 ---
 
 ## 🚀 How It Works
