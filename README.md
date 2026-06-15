@@ -1,6 +1,11 @@
 # 🎯 JobRadar
 
-An automated, AI-powered job discovery pipeline that aggregates **12 sources**, eliminates noise with zero-cost heuristics, deduplicates across runs, ranks candidates by relevance, scores with AI, and delivers priority alerts to **Telegram** — running twice daily.
+> An automated, AI-powered job discovery pipeline — aggregates **14 sources**, eliminates noise with zero-cost heuristics, deduplicates across runs, ranks by relevance, scores with AI, and delivers priority alerts to **Telegram**. Runs twice daily, entirely on free-tier APIs.
+
+[![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=flat&logo=python&logoColor=white)](https://python.org)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Sources](https://img.shields.io/badge/Job%20Sources-14-blueviolet?style=flat)](#-12-job-sources--rich--redundant)
+[![Free Tier](https://img.shields.io/badge/API%20Cost-100%25%20Free%20Tier-brightgreen?style=flat)](#-performance--api-usage)
 
 Built for freshers, interns, and early-career developers — but **fully configurable for any role, stack, domain, or location via `profile.yaml` alone**. A cybersecurity candidate, a data engineer, a mobile developer — no code changes needed.
 
@@ -10,53 +15,87 @@ Built for freshers, interns, and early-career developers — but **fully configu
 
 ## 🚀 How It Works
 
+<table>
+<tr>
+<td valign="top" width="260">
+
+**What lands in your Telegram:**
+
+<img src="docs/telegram_ss.jpg" width="240" alt="Telegram alerts showing matched jobs with AI scores, highlights, and apply links"/>
+
+Urgent alerts fire the moment a high-scoring job is found. Every run ends with a session summary card.
+
+</td>
+<td valign="top">
+
 ```
-            ┌─────────────────────────────────────────────────┐
-            │         12 Job Sources (Concurrent)             │
-            │  ATS APIs · YC · Internshala · Naukri · Hirist  │
-            │  Fresher Blogs RSS · Serper · HN · Reddit · … │
-            └────────────────────────┬────────────────────────┘
-                                     │ ~8,000–9,000 raw jobs
-                                     ▼
-            ┌─────────────────────────────────────────────────┐
-            │           Multi-Key Deduplication               │
-            │  Title+Company+Location MD5 · Canonical URL MD5 │
-            │  Run-level + SQLite persistent — never repeat   │
-            └────────────────────────┬────────────────────────┘
-                                     │ ~600–800 new jobs
-                                     ▼
-            ┌─────────────────────────────────────────────────┐
-            │         Smart Rule-Based Pre-Filter             │
-            │  Expiry · Blacklists · ATS Allowlist · Location │
-            │  RSS Tags · Experience · Company Cap            │
-            │        Drops ~90–95% with zero AI cost          │
-            └────────────────────────┬────────────────────────┘
-                                     │ ~50–150 eligible jobs
-                                     ▼
-            ┌─────────────────────────────────────────────────┐
-            │         Heuristic Relevance Ranking             │
-            │  Go/TS stack · Fintech · Fresher · Recency      │
-            │       Best-fit jobs scored first, free          │
-            └────────────────────────┬────────────────────────┘
-                                     │ ranked, best-first
-                                     ▼
-            ┌─────────────────────────────────────────────────┐
-            │     AI Scorer — Groq llama-4-scout-17b          │
-            │  Token-budget guard · 5s throttle (28.8K TPM)  │
-            │  ~89 jobs/run · few-shot calibrated 1–10 scale  │
-            └────────────────────────┬────────────────────────┘
-                                     │
-                    ┌────────────────┴────────────────┐
-                    ▼                                 ▼
-            Score ≥ 8 (Urgent)              Score 6–7 (Digest)
-          Instant Telegram push         Session summary card
+┌─────────────────────────────────────────────────┐
+│         14 Job Sources (Concurrent)             │
+│  ATS APIs · YC · Internshala · Naukri · Hirist  │
+│  Fresher Blogs RSS · Serper · HN · Reddit · … │
+└────────────────────────┬────────────────────────┘
+                         │ ~8,000–9,000 raw jobs
+                         ▼
+┌─────────────────────────────────────────────────┐
+│           Multi-Key Deduplication               │
+│  Title+Company+Location MD5 · Canonical URL MD5 │
+│  Run-level + SQLite persistent — never repeat   │
+└────────────────────────┬────────────────────────┘
+                         │ ~600–800 new jobs
+                         ▼
+┌─────────────────────────────────────────────────┐
+│         Smart Rule-Based Pre-Filter             │
+│  Expiry · Blacklists · ATS Allowlist · Location │
+│  RSS Tags · Experience · Company Cap            │
+│        Drops ~90–95% with zero AI cost          │
+└────────────────────────┬────────────────────────┘
+                         │ ~50–150 eligible jobs
+                         ▼
+┌─────────────────────────────────────────────────┐
+│         Heuristic Relevance Ranking             │
+│  Go/TS stack · Fintech · Fresher · Recency      │
+│       Best-fit jobs scored first, free          │
+└────────────────────────┬────────────────────────┘
+                         │ ranked, best-first
+                         ▼
+┌─────────────────────────────────────────────────┐
+│     AI Scorer — Groq llama-4-scout-17b          │
+│  Token-budget guard · 5s throttle (28.8K TPM)  │
+│  ~89 jobs/run · few-shot calibrated 1–10 scale  │
+└────────────────────────┬────────────────────────┘
+                         │
+         ┌───────────────┴───────────────┐
+         ▼                               ▼
+ Score ≥ 8 (Urgent)            Score 6–7 (Digest)
+ Instant Telegram push         Session summary card
 ```
+
+</td>
+</tr>
+</table>
+
+## Table of Contents
+
+1. [Features & Architecture](#-features--architecture)
+   - [14 Job Sources](#-14-job-sources--rich--redundant)
+   - [Smart Pre-Filter](#%EF%B8%8F-smart-pre-filter)
+   - [Heuristic Relevance Ranker](#-heuristic-relevance-ranker)
+   - [AI Scorer](#-ai-scorer--budget-protected)
+   - [Multi-Key Deduplication](#-multi-key-deduplication)
+2. [Project Structure](#%EF%B8%8F-project-structure)
+3. [Setup](#%EF%B8%8F-setup)
+4. [Automation](#-automation)
+5. [Performance & API Usage](#-performance--api-usage)
+6. [Maintenance & Tuning](#%EF%B8%8F-maintenance--tuning)
+7. [Future Goals](#-future-goals)
+8. [Contributing](#-contributing)
+9. [License](#-license)
 
 ---
 
 ## ✨ Features & Architecture
 
-### 🔌 12 Job Sources — Rich & Redundant
+### 🔌 14 Job Sources — Rich & Redundant
 
 **Structured ATS APIs** (via `sources/ats.py`):
 Direct structured API polling of **9 ATS platforms** — no scraping, no JS rendering, full coverage for every listed company:
@@ -80,7 +119,6 @@ All companies are listed in `companies.yaml`. Per-company caps prevent any singl
 India's largest job board. Stage-1 filtered search pipeline:
 - **Search API grid**: 10 keywords × 3 locations × 2 pages = up to 1,200 raw cards per run
 - **Stage-1 in-line filters**: experience cap and age cap applied immediately at search time — stale and overqualified jobs are dropped before they enter the pipeline
-- Jobs enter the pipeline with Stage-1 snippet descriptions (100–300 chars), sufficient for prefilter and heuristic ranking
 - Configurable per `profile.yaml → naukri:` block (keywords, locations, pages)
 
 **Hirist.tech** (`sources/hirist.py`):
@@ -113,6 +151,12 @@ Parses the monthly Ask HN hiring thread via the official Algolia HN search API. 
 
 **Reddit Job Feeds** (`sources/reddit.py`):
 Pulls from relevant hiring subreddits (r/cscareerquestions, r/IndiaJobs, etc.) via Reddit's RSS endpoints.
+
+**Jobicy** (`sources/jobicy.py`):
+Free remote jobs JSON API. Good for catching remote-first companies open to India timezone candidates.
+
+**RemoteOK** (`sources/remoteok.py`):
+JSON API covering dev/engineering remote jobs from global startups.
 
 **Cutshort.io** (`sources/cutshort.py`):
 Integrated via public API. Currently disabled (API unreliability) but wired in.
@@ -224,15 +268,17 @@ jobradar/
 ├── companies.yaml             # ATS company slugs — 9 platforms (Greenhouse/Lever/Ashby/Workable/SmartRecruiters/Rippling/BambooHR/Recruitee/Personio)
 │
 ├── sources/                   # Job fetchers — one file per source
-│   ├── ats.py                 # 9-platform ATS polling: Greenhouse (US+EU) / Lever / Ashby / Workable / SmartRecruiters / Rippling / BambooHR / Recruitee / Personio
-│   ├── naukri.py              # Naukri.com — Stage-1 filtered search (snippets, no Step-2 detail fetch)
+│   ├── ats.py                 # 9-platform ATS polling
+│   ├── naukri.py              # Naukri.com — Stage-1 filtered search
 │   ├── hirist.py              # Hirist.tech — India niche tech board (JS-rendered)
 │   ├── yc.py                  # YC jobs board — two-phase scraper (cards → full JD)
 │   ├── internshala.py         # Internshala — optimized plain-HTTP scraper
 │   ├── freshers_blogs.py      # 8+ Indian fresher blogs — concurrent RSS + lazy JD fetch
-│   ├── serper.py              # Tiered Google dork discovery — Tier 1: owned career pages + alt ATS + hidden apps
+│   ├── serper.py              # Tiered Google dork discovery
 │   ├── hackernews.py          # HN "Who is Hiring?" — Algolia auto-discovery
 │   ├── reddit.py              # Reddit RSS feeds
+│   ├── jobicy.py              # Jobicy.com — remote jobs JSON API
+│   ├── remoteok.py            # RemoteOK — JSON API
 │   ├── cutshort.py            # Cutshort.io API (currently disabled)
 │   ├── instahyre.py           # Instahyre API + scraper fallback (currently disabled)
 │   └── wellfound.py           # Wellfound/AngelList (currently disabled — blocks bots)
@@ -253,6 +299,10 @@ jobradar/
 │   ├── <profile>.db           # Per-user SQLite database
 │   └── <profile>.log          # Rotating run logs (1MB × 3 files)
 │
+├── docs/
+│   ├── setup_guide.md         # Complete setup & customisation guide
+│   └── telegram_ss.jpg        # Example Telegram alert screenshot
+│
 ├── requirements.txt
 └── .env                       # API keys (never commit)
 ```
@@ -261,11 +311,14 @@ jobradar/
 
 ## 🛠️ Setup
 
+> **New here?** The full walkthrough — API keys, `profile.yaml` field reference, Naukri config, ranker weights, troubleshooting — is in **[`docs/setup_guide.md`](docs/setup_guide.md)**. The steps below are a condensed quick-start.
+
 ### 1. Clone & Install
 
 ```bash
 git clone https://github.com/your-username/jobradar.git
 cd jobradar
+python3 -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
 ```
 
@@ -283,44 +336,29 @@ TELEGRAM_CHAT_ID=987654321
 Edit to match your skills, target roles, locations, and hard-reject rules:
 
 ```yaml
-sources:
-  ats:            true   # Greenhouse / Lever / Ashby / Workable
-  naukri:         true   # India's largest job board
-  internshala:    true   # India's #1 internship platform
-  yc:             true   # YC portfolio company jobs
-  freshers_blogs: true   # 8+ Indian fresher blogs (RSS)
-  serper:         true   # Google search dork discovery
-  hackernews:     false  # HN "Who is Hiring?" monthly thread
-  hirist:         false  # Hirist.tech (enable once tested)
-  cutshort:       false  # Cutshort.io (API unreliable)
-  instahyre:      false  # Instahyre
-  reddit:         false  # Reddit job feeds
-  wellfound:      false  # Wellfound (blocks bots)
-
 candidate:
   name: "Your Name"
   roles:
     primary:
       - "Backend Engineering Intern"
       - "Go Developer Intern"
-      - "Software Engineering Intern"
   skills:
     strong: ["Go", "TypeScript", "PostgreSQL", "Redis", "Docker"]
     learning: ["Kubernetes", "AWS"]
   location:
     base: "Kolkata, India"
-    acceptable: ["Remote", "Bangalore", "Mumbai", "Hyderabad", "Delhi NCR"]
+    acceptable: ["Remote", "Bangalore", "Mumbai"]
     hard_reject: ["US only", "UK only", "Europe only"]
 
 hard_reject:
   max_job_age_days: 45
-  ats_per_company_cap: 25
-  max_ai_jobs_per_run: 200        # hard fallback — primary guard is token budget
   experience_keywords:
     - "2+ years"
     - "senior engineer"
     - "tech lead"
 ```
+
+Full field reference → [`docs/setup_guide.md`](docs/setup_guide.md)
 
 ### 4. Validate Config (Dry Run)
 
@@ -330,7 +368,7 @@ python main.py profile.yaml --dry-run
 
 Prints your full config summary and confirms DB initialises correctly — no API calls made.
 
-### 5. Run the Pipeline
+### 5. Run
 
 ```bash
 python main.py
@@ -399,10 +437,34 @@ Register-ScheduledTask -TaskName "JobRadar" -Action $action -Trigger $trigger -R
   ```
 - **Tuning pre-filter**: Adjust `hard_reject.experience_keywords` and `hard_reject.role_blacklist` in `profile.yaml` if too many irrelevant jobs slip through.
 - **Tuning the ranker**: Edit numeric weights in `profile.yaml → ranker_weights:` — all bonus/penalty/threshold values are configurable without touching code. Skill, domain, and project detection patterns are rebuilt automatically from your profile each run.
-- **Switching to a different domain** (e.g. cybersecurity, data engineering): Update `candidate.skills`, `candidate.industries`, and `candidate.projects.relevance_signal` in `profile.yaml`. The ranker, prefilter, and AI scorer all adapt — no code changes needed.
+- **Switching domains** (e.g. cybersecurity, data engineering): Update `candidate.skills`, `candidate.industries`, and `candidate.projects.relevance_signal` in `profile.yaml`. The ranker, prefilter, and AI scorer all adapt — no code changes needed.
 - **Naukri config**: Add more keywords or locations under `profile.yaml → naukri:` to increase coverage. Each page = up to 20 listings; each keyword × location combo = 2 pages by default.
 - **Serper budget**: `MAX_SERPER_CALLS` (default 25) and `TIER_1_BUDGET` (default 10) in `sources/serper.py`. Tier 1 budget ensures the unique sources always run regardless of total cap.
 - **Per-user profiles**: Run `python main.py my_profile.yaml` to use a different profile file. Each profile gets its own DB and log file under `data/`.
+
+---
+
+## 🔭 Future Goals
+
+These are the directions I want to take this project — roughly in order of priority:
+
+1. **Multi-profile / loosely-coupled architecture** — move to a `profiles/` directory where each `.yaml` file is a fully self-contained configuration. A single codebase serves multiple people simultaneously on a hosted AWS instance. Today the codebase is one profile deep; this change makes it horizontally scalable to friends, users, and eventually the public.
+
+2. **Fix sources that need deeper scraping** — a handful of sources (Wellfound, Instahyre, Cutshort) are currently disabled because they block bots or have unreliable APIs. The goal is to properly handle these with headless browser support or reverse-engineered API calls, rather than just marking them disabled.
+
+3. **Application tracking UI + weekly insights** — a lightweight web UI for tracking which jobs you've applied to, rejected, or are interviewing at. Pair that with weekly automated analysis: which companies are actively hiring for your stack, which sources are yielding the highest-scoring jobs, where the best opportunities are concentrated. Think: a personal hiring dashboard, not just push notifications.
+
+4. **Global-first design** — the current source mix skews heavily toward India (Naukri, Internshala, freshers blogs). The goal is to make the India-specific sources opt-in rather than default, and expand global coverage (more remote-first boards, international ATS companies, HN and Reddit as first-class sources) so the tool is equally useful for candidates anywhere.
+
+5. **Public hosting** — if the above pieces come together and there's genuine interest, host it as a public service. Users onboard their own profile, connect their Telegram, and get alerts without running any code themselves.
+
+---
+
+## 🤝 Contributing
+
+Contributions are welcome. The most useful thing you can add right now is a **new job source**.
+
+See **[CONTRIBUTING.md](CONTRIBUTING.md)** for the full guide — it covers the `Job` dataclass contract, how to wire a new source into the pipeline, lazy-fetch patterns, error handling expectations, and the PR process.
 
 ---
 
