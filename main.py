@@ -107,13 +107,16 @@ def run(profile_path: str, dry_run: bool = False):
     # ── Setup: load profile, extract per-user routing info ───────────────────
     profile = load_profile(profile_path)
     db_path = profile.get("db_path", f"data/{_username}.db")
-    chat_id = str(profile.get("telegram_chat_id", "")).strip()
+    chat_id = str(
+        profile.get("telegram_chat_id") or os.environ.get("TELEGRAM_CHAT_ID", "")
+    ).strip()
 
     init_db(db_path)
 
-    if not chat_id:
+    if not chat_id and not dry_run:
         logger.warning(
-            "telegram_chat_id is not set in profile — Telegram notifications will fail"
+            "telegram_chat_id is not set in profile or TELEGRAM_CHAT_ID env var — "
+            "Telegram notifications will fail"
         )
 
     # ── Dry-run: validate config and exit without hitting any APIs ────────────
