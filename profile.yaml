@@ -80,12 +80,15 @@ candidate:
     - name: "Zaraba — Crypto Exchange"
       description: "Built a full crypto exchange in Go with real-time order matching engine, in-memory orderbook, gRPC-based microservice architecture, wallet management, and trade execution using fixed-point arithmetic"
       relevance_signal: "Fintech, crypto, trading, payments, Go, gRPC, high-performance systems, real-time"
-    - name: "CipherBin — Ephemeral Code Sharing"
-      description: "Full-stack Go web app with Templ engine (server-side rendering), PostgreSQL backend with Clean Architecture, session-based authentication, prepared statements"
-      relevance_signal: "Go, PostgreSQL, web development, security, clean architecture"
     - name: "Sentinel-Proxy — Real-time Traffic Monitor"
       description: "Reverse proxy built in Go with gRPC streaming that monitors outgoing traffic, tracks behavior with Redis, and flags suspicious data exfiltration patterns using adaptive thresholds"
       relevance_signal: "Go, gRPC, Redis, security, infrastructure, streaming, proxy"
+    - name: "JobRadar — Automated Job Discovery Pipeline"
+      description: "Built a fully automated job discovery and ranking pipeline in Python. Scrapes 12+ sources (ATS APIs, RSS feeds, Naukri, Internshala, YC, Serper), deduplicates, prefilters with heuristic rules, heuristically ranks with a profile-driven scoring model, then AI-scores top candidates using Groq (Llama-4). Delivers urgent matches via Telegram bot."
+      relevance_signal: "Python, pipeline, automation, data engineering, REST APIs, AI integration, backend tooling, scraping, scheduler, distributed sources"
+    - name: "CipherBin — Ephemeral Code Sharing"
+      description: "Full-stack Go web app with Templ engine (server-side rendering), PostgreSQL backend with Clean Architecture, session-based authentication, prepared statements"
+      relevance_signal: "Go, PostgreSQL, web development, security, clean architecture"
 
   # Education
   education:
@@ -173,8 +176,8 @@ hard_reject:
     - "Data Scientist"
     - "Machine Learning Engineer"
     - "ML Engineer"
-    - "DevOps Engineer"               # unless it also has backend component
-    - "QA Engineer"
+    # - "DevOps Engineer"               # unless it also has backend component
+    # - "QA Engineer"
     - "Test Engineer"
     - "Business Analyst"
     - "Product Manager"
