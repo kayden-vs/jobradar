@@ -128,13 +128,22 @@ def init_db(db_path: str | None = None):
     conn.execute("CREATE INDEX IF NOT EXISTS idx_url_id ON jobs(url_id)")
 
     conn.execute("""
-        CREATE TABLE IF NOT EXISTS run_log (
-            run_at       TEXT,
-            total_raw    INTEGER,
-            after_dedup  INTEGER,
-            after_filter INTEGER,
-            after_score  INTEGER,
-            notified     INTEGER
+        CREATE TABLE IF NOT EXISTS run_stats (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            run_at          TEXT    NOT NULL,
+            raw_fetched     INTEGER DEFAULT 0,
+            after_dedup     INTEGER DEFAULT 0,
+            after_prefilter INTEGER DEFAULT 0,
+            after_scoring   INTEGER DEFAULT 0,
+            urgent_count    INTEGER DEFAULT 0,
+            digest_count    INTEGER DEFAULT 0,
+            source_breakdown TEXT DEFAULT NULL
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS weekly_summaries (
+            week_key TEXT PRIMARY KEY,  -- ISO year-week, e.g. '2026-W25'
+            sent_at  TEXT NOT NULL      -- full ISO datetime of when it was sent
         )
     """)
     conn.commit()
@@ -222,3 +231,73 @@ def get_jobs_by_score(min_score: int = 6, db_path: str | None = None) -> list[di
                   "score", "reason", "highlights"], row))
         for row in rows
     ]
+
+
+import json as _json
+
+
+def save_run_stats(
+    run_at:          str,
+    raw_fetched:     int,
+    after_dedup:     int,
+    after_prefilter: int,
+    urgent_count:    int,
+    digest_count:    int,
+    low_count:       int,
+    source_breakdown: dict,
+    db_path:         str | None = None,
+):
+    """
+    Persist pipeline run statistics for weekly summary queries.
+
+    source_breakdown: dict mapping source name to job count that reached the AI scorer.
+      e.g. {"greenhouse": 74, "serper": 6, "naukri": 2}
+    """
+    path = _db(db_path)
+    conn = sqlite3.connect(path)
+    conn.execute("""
+        INSERT INTO run_stats
+        (run_at, raw_fetched, after_dedup, after_prefilter,
+         after_scoring, urgent_count, digest_count, source_breakdown)
+        VALUES (?,?,?,?,?,?,?,?)
+    """, (
+        run_at,
+        raw_fetched,
+        after_dedup,
+        after_prefilter,
+        urgent_count + digest_count + low_count,  # after_scoring
+        urgent_count,
+        digest_count,
+        _json.dumps(source_breakdown),
+    ))
+    conn.commit()
+    conn.close()
+
+
+def was_weekly_summary_sent(db_path: str | None = None) -> bool:
+    """
+    Returns True if the weekly summary has already been sent for the current
+    ISO week (year + week number). Prevents double-sending on multi-run Fridays.
+    """
+    from datetime import datetime
+    week_key = datetime.now().strftime("%G-W%V")   # e.g. '2026-W25'
+    conn = sqlite3.connect(_db(db_path))
+    row  = conn.execute(
+        "SELECT 1 FROM weekly_summaries WHERE week_key=?", (week_key,)
+    ).fetchone()
+    conn.close()
+    return row is not None
+
+
+def mark_weekly_summary_sent(db_path: str | None = None):
+    """Record that the weekly summary was sent for the current ISO week."""
+    from datetime import datetime
+    week_key = datetime.now().strftime("%G-W%V")
+    sent_at  = datetime.now().isoformat()
+    conn = sqlite3.connect(_db(db_path))
+    conn.execute(
+        "INSERT OR REPLACE INTO weekly_summaries (week_key, sent_at) VALUES (?,?)",
+        (week_key, sent_at),
+    )
+    conn.commit()
+    conn.close()

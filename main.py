@@ -1,6 +1,7 @@
 import logging
 import os
 import sys
+from datetime import datetime
 from logging.handlers import RotatingFileHandler
 from dotenv import load_dotenv
 
@@ -50,7 +51,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("jobradar")
 
-from storage.db import init_db
+from storage.db import init_db, save_run_stats
 from sources.ats import fetch_all_ats, load_companies
 from sources.cutshort import fetch_cutshort
 from sources.instahyre import fetch_instahyre
@@ -69,6 +70,7 @@ from pipeline.dedup import deduplicate
 from pipeline.prefilter import prefilter, load_profile
 from pipeline.scorer import score_all
 from notify.telegram_bot import notify_urgent_jobs, send_session_divider
+from notify.weekly_summary import send_weekly_summary_if_due
 
 
 def _print_dry_run_summary(profile: dict, db_path: str, chat_id: str, profile_path: str):
@@ -236,6 +238,28 @@ def run(profile_path: str, dry_run: bool = False):
         urgent    = len(urgent_jobs),
         chat_id   = chat_id,
     )
+
+    # ── PERSIST RUN STATS (for weekly summary) ───────────────────────────────
+    # Compute per-source breakdown from all scored jobs.
+    all_scored = urgent_jobs + digest_jobs + low_jobs
+    source_breakdown: dict[str, int] = {}
+    for job in all_scored:
+        src = job.get("source", "unknown")
+        source_breakdown[src] = source_breakdown.get(src, 0) + 1
+    save_run_stats(
+        run_at          = datetime.now().isoformat(),
+        raw_fetched     = total_raw,
+        after_dedup     = len(new_jobs),
+        after_prefilter = len(eligible_jobs),
+        urgent_count    = len(urgent_jobs),
+        digest_count    = len(digest_jobs),
+        low_count       = len(low_jobs),
+        source_breakdown = source_breakdown,
+        db_path         = db_path,
+    )
+
+    # ── WEEKLY SUMMARY (Fridays only) ────────────────────────────────────────
+    send_weekly_summary_if_due(db_path, profile, chat_id)
 
     logger.info("Pipeline complete.")
     logger.info(
