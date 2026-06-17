@@ -402,7 +402,36 @@ def score_all(
         profile=profile,
     )
 
-    # ── Step 2: Hard fallback cap (absolute worst-case guard) ─────────────
+    # ── Step 2a: Post-ranking ATS per-company cap ─────────────────────────
+    # The prefilter has a safety ceiling (100/company) to prevent runaway
+    # single-company domination. Here, AFTER ranking, we apply the real
+    # per-company cap (ats_per_company_cap, default 25) so we keep the
+    # TOP-ranked N jobs per company instead of the first-fetched N.
+    hard_reject_cfg = profile.get("hard_reject", {})
+    ats_per_company_cap = hard_reject_cfg.get("ats_per_company_cap", 25)
+    _ATS_SOURCES_SET = {"greenhouse", "greenhouse_eu", "lever", "ashby", "workable"}
+    ranked_company_counts: dict[str, int] = {}
+    capped_post_rank: list[str] = []
+    filtered_jobs = []
+    for job in jobs:
+        src = job.get("source", "")
+        if src in _ATS_SOURCES_SET:
+            co = job.get("company", "")
+            n  = ranked_company_counts.get(co, 0)
+            if n >= ats_per_company_cap:
+                capped_post_rank.append(co)
+                continue
+            ranked_company_counts[co] = n + 1
+        filtered_jobs.append(job)
+    jobs = filtered_jobs
+    if capped_post_rank:
+        unique_capped = sorted(set(capped_post_rank))
+        logger.info(
+            f"Post-ranking ATS cap ({ats_per_company_cap}/company): dropped lower-ranked "
+            f"surplus from — {', '.join(unique_capped)}"
+        )
+
+    # ── Step 2b: Hard fallback cap (absolute worst-case guard) ────────────
     # Primary guard is the token budget below. This is a last-resort ceiling
     # in case token estimation is wildly off (e.g. all jobs have huge JDs).
     max_ai_jobs = profile.get("hard_reject", {}).get("max_ai_jobs_per_run", 200)

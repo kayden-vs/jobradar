@@ -555,7 +555,10 @@ def prefilter(jobs: list[dict], profile: dict) -> list[dict]:
          filters have already narrowed the pool.
     """
     hard_reject_cfg = profile.get("hard_reject", {})
-    ats_per_company_cap = hard_reject_cfg.get("ats_per_company_cap", 25)
+    # Use a high safety ceiling here — the real per-company cap (ats_per_company_cap)
+    # runs POST-ranking in scorer.py so we keep the TOP-ranked jobs per company,
+    # not the first-fetched ones. This value only prevents runaway single-company floods.
+    ats_prefilter_safety_cap = hard_reject_cfg.get("ats_prefilter_safety_cap", 100)
 
     passed = []
     company_counts: dict[str, int] = {}  # tracks ATS jobs per company
@@ -598,25 +601,27 @@ def prefilter(jobs: list[dict], profile: dict) -> list[dict]:
         if rejected:
             continue
 
-        # ── Per-company cap (ATS only) ────────────────────────────────────
-        # Applied last so all other filters have already reduced the pool.
+        # ── Per-company safety ceiling (ATS only) ────────────────────────────
+        # High ceiling (default 100) — only prevents extreme single-company floods.
+        # The real per-company cap (ats_per_company_cap=25) runs POST-ranking
+        # in scorer.py so the TOP-ranked jobs per company are kept, not random ones.
         if source in _ATS_SOURCES:
             count = company_counts.get(company, 0)
-            if count >= ats_per_company_cap:
+            if count >= ats_prefilter_safety_cap:
                 logger.debug(
-                    f"REJECTED '{title}' @ '{company}': company cap reached "
-                    f"({ats_per_company_cap} ATS jobs/company)"
+                    f"REJECTED '{title}' @ '{company}': prefilter safety cap reached "
+                    f"({ats_prefilter_safety_cap} ATS jobs/company)"
                 )
                 continue
             company_counts[company] = count + 1
 
         passed.append(job)
 
-    # Summarise cap hits
-    capped_companies = [c for c, n in company_counts.items() if n >= ats_per_company_cap]
+    # Summarise safety-cap hits
+    capped_companies = [c for c, n in company_counts.items() if n >= ats_prefilter_safety_cap]
     if capped_companies:
         logger.info(
-            f"ATS company cap ({ats_per_company_cap}): capped companies — "
+            f"ATS prefilter safety cap ({ats_prefilter_safety_cap}): capped companies — "
             + ", ".join(capped_companies)
         )
 
