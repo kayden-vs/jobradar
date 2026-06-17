@@ -181,6 +181,32 @@ hard_reject:
     - "UI Designer"
     - "UX Designer"
     - "Frontend Developer"            # unless full-stack
+    # Senior / over-qualified roles — always score 1-2, waste token budget
+    - "Senior Software"
+    - "Senior Backend"
+    - "Senior Frontend"
+    - "Senior Full"
+    - "Senior Java"
+    - "Senior Golang"
+    - "Senior Engineer"
+    - "Senior Developer"
+    - "Senior Infra"
+    - "Senior SRE"
+    - "Senior Security"
+    - "Senior Staff"
+    - "Staff Software"
+    - "Staff Engineer"
+    - "Staff Backend"
+    - "Principal Software"
+    - "Principal Engineer"
+    - "Principal Developer"
+    - "Engineering Manager"
+    - "Manager, Engineering"
+    - "Manager I, Engineering"
+    - "Tech Lead"
+    - "Engineering Lead"
+    - "Lead Software"
+    - "Lead Engineer"
 
 # ─────────────────────────────────────────────────────────────────
 # HIRIST.TECH — source-specific config
@@ -255,7 +281,7 @@ ranker_weights:
 
   # ── Penalty signals (Approach 1) ─────────────────────────────────
   # Negative values push weak jobs further down the queue.
-  penalty_no_skill_match:   -3  # No candidate skill keyword anywhere in job text
+  penalty_no_skill_match:   -1  # No candidate skill keyword anywhere in job text (reduced: freshers_blogs have partial stub descriptions, -3 was too aggressive)
   penalty_generic_title:    -2  # Title has no recognisable tech/role signal
   penalty_bodyshop_company: -1  # Company looks like a staffing / outsourcing firm
   penalty_ats_stub_desc:    -2  # ATS job with description shorter than threshold
@@ -270,7 +296,7 @@ ranker_weights:
   # Applied AFTER all other scoring to reflect data quality per source.
   source_internshala_stipend_bonus:  2      # Internshala job + stipend ≥ min below
   source_internshala_stipend_min:    10000  # INR/month threshold for stipend bonus
-  source_freshers_blog_batch_bonus:  1      # freshers_blogs job + matching batch tag
+  source_freshers_blog_batch_bonus:  3      # freshers_blogs job + matching batch tag (buffed: blog descriptions are stubs so this is the main signal)
   source_freshers_blog_batches:             # Graduation years that match the candidate
     - 2025
     - 2026

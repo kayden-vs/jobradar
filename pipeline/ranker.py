@@ -377,7 +377,12 @@ def _penalty_score(
     source    = job.get("source", "")
 
     # ── No skill match anywhere ───────────────────────────────────────────
-    if not pp.skill_match_re.search(full_text):
+    # freshers_blogs sources have stub descriptions at ranking time — the scorer
+    # lazy-fetches the full post body later. Skip the penalty for them so we
+    # don't push a good blog post out of the scoring window due to a missing
+    # skill keyword that's actually in the full JD.
+    is_freshers_blog = source.startswith("freshers_blogs")
+    if not is_freshers_blog and not pp.skill_match_re.search(full_text):
         p = w["penalty_no_skill_match"]
         delta += p
         reasons.append(f"no-skill-match({p:+})")

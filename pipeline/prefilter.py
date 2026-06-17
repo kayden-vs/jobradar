@@ -99,6 +99,30 @@ _CLOSED_PHRASES = re.compile(
     re.IGNORECASE,
 )
 
+# Non-job content — exam prep, govt notifications, question papers that leak
+# through from broad RSS feeds (particularly freshersnow.com root /feed/).
+_NON_JOB_CONTENT_RE = re.compile(
+    r'question\s+paper[s]?'
+    r'|previous\s+paper[s]?'
+    r'|model\s+paper[s]?'
+    r'|answer\s+key'
+    r'|admit\s+card'
+    r'|hall\s+ticket'
+    r'|exam\s+pattern'
+    r'|\bsyllabus\s+20\d\d'
+    r'|\bresult[s]?\s+20\d\d'
+    r'|\bcut\s*off\s+mark'
+    r'|police\s+constable'
+    r'|\bssc\s+'
+    r'|\bupsc\s+'
+    r'|\bibps\s+'
+    r'|railway\s+(?:group|recruitment|loco)'
+    r'|fireman\s+'
+    r'|\bpsc\s+'
+    r'|horticulture\s+officer',
+    re.IGNORECASE,
+)
+
 # Context words that precede a deadline date.
 _DEADLINE_CONTEXT_RE = re.compile(
     r'(?:last\s+date(?:\s+to\s+apply)?'
@@ -198,6 +222,21 @@ def check_role_blacklist(title: str, profile: dict) -> tuple[bool, str]:
     for role in (profile["hard_reject"].get("role_blacklist") or []):
         if role.lower() in title_lower:
             return True, f"Role blacklisted: {role}"
+    return False, ""
+
+
+def check_non_job_content(job: dict) -> tuple[bool, str]:
+    """
+    Reject non-job content — exam prep posts, govt notifications, question
+    papers, etc. that leak through broad RSS feeds (e.g. freshersnow root /feed/).
+
+    These pass the tech-role title filter (no explicit reject signal) but are
+    clearly not job postings and would score 1/10, wasting Groq tokens.
+    """
+    title = job.get("title", "")
+    m = _NON_JOB_CONTENT_RE.search(title)
+    if m:
+        return True, f"Non-job content: '{m.group(0).strip()}'"
     return False, ""
 
 
@@ -338,9 +377,13 @@ _ATS_REJECT_LOCATION_PATTERNS = re.compile(
     r'|\bportland\b|\bsalt lake\b|\bsan jose\b|\bsan diego\b'
     r'|\b[a-z]+,\s*[A-Z]{2}\b'  # city, STATE abbreviation (e.g. "Austin, TX")
     r'|\bunited kingdom\b|\blondon\b|\buk only\b'
+    # EU countries — remote-but-EU-only roles that won't hire India candidates
+    r'|\bgermany\b|\bireland\b|\bspain\b|\bsweden\b|\bpoland\b'
+    r'|\bnetherlands\b|\bfrancefr\b|\bfrance\b|\bdenmark\b|\bfinland\b'
+    r'|\bnorway\b|\bczech\b|\baustralia\b'
     r'|\beurope\b|\bberlin\b|\bamsterdam\b|\bparis\b|\bstockholm\b'
     r'|\bsingapore\b|\bdubai\b|\bcairo\b|\bsydney\b|\bmelbourne\b'
-    r'|\bcanada\b|\btoronto\b|\bvancouver\b',
+    r'|\bcanada\b|\btoronto\b|\bvancouver\b|\blatin america\b|\blatam\b',
     re.IGNORECASE,
 )
 
@@ -528,6 +571,7 @@ def prefilter(jobs: list[dict], profile: dict) -> list[dict]:
             check_has_meaningful_title(job),           # no title = skip
             check_no_description(job),                 # no text = skip
             check_candidate_post(job),                 # Not a job posting
+            check_non_job_content(job),                # Exam prep / govt noise from RSS
             # ── Temporal ─────────────────────────────────────────────────
             check_is_old_post(job, profile),           # old post (smart date parsing)
             check_expiry_signals(job),                 # closed/deadline-passed signals in text
