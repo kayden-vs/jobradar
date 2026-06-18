@@ -7,14 +7,14 @@
 <p align="center">
   <a href="https://python.org"><img src="https://img.shields.io/badge/Python-3.11+-3776AB?style=flat&logo=python&logoColor=white" alt="Python 3.11+"/></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-22c55e?style=flat" alt="MIT License"/></a>
-  <a href="#-14-job-sources"><img src="https://img.shields.io/badge/Job%20Sources-14-7c3aed?style=flat" alt="14 Job Sources"/></a>
+  <a href="#-15-job-sources"><img src="https://img.shields.io/badge/Job%20Sources-15-7c3aed?style=flat" alt="15 Job Sources"/></a>
   <a href="#-performance--api-usage"><img src="https://img.shields.io/badge/API%20Cost-100%25%20Free%20Tier-16a34a?style=flat" alt="100% Free Tier"/></a>
   <a href="docs/setup_guide.md"><img src="https://img.shields.io/badge/docs-Setup%20Guide-0ea5e9?style=flat" alt="Setup Guide"/></a>
 </p>
 
 ---
 
-JobRadar aggregates **14 job sources**, eliminates noise with zero-cost rule-based filters, deduplicates across runs, ranks by relevance, scores with AI, and delivers priority alerts straight to **Telegram** — twice daily, entirely on free-tier APIs.
+JobRadar aggregates **15 job sources**, eliminates noise with zero-cost rule-based filters, deduplicates across runs, ranks by relevance, scores with AI, and delivers priority alerts straight to **Telegram** — twice daily, entirely on free-tier APIs.
 
 Built for freshers, interns, and early-career developers. But **fully configurable for any role, stack, domain, or location via `profile.yaml` alone** — no code changes needed whether you're a cybersecurity candidate, a data engineer, or a mobile developer.
 
@@ -27,7 +27,7 @@ Built for freshers, interns, and early-career developers. But **fully configurab
 
 - [How It Works](#-how-it-works)
 - [Features](#-features)
-  - [14 Job Sources](#-14-job-sources)
+  - [15 Job Sources](#-15-job-sources)
   - [Smart Pre-Filter](#️-smart-pre-filter)
   - [Heuristic Relevance Ranker](#-heuristic-relevance-ranker)
   - [AI Scorer](#-ai-scorer)
@@ -60,9 +60,9 @@ Urgent alerts fire the moment a high-scoring job is found. Every run ends with a
 
 ```
 ┌─────────────────────────────────────────────────┐
-│         14 Job Sources (Concurrent)             │
+│         15 Job Sources (Concurrent)             │
 │  ATS APIs · YC · Internshala · Naukri · Hirist  │
-│  Fresher Blogs RSS · Serper · HN · Reddit · …   │
+│  hiring.cafe · Blogs RSS · Serper · HN · More   │
 └────────────────────────┬────────────────────────┘
                          │ ~8,000–9,000 raw jobs
                          ▼
@@ -108,7 +108,7 @@ Urgent alerts fire the moment a high-scoring job is found. Every run ends with a
 
 ## ✨ Features
 
-### 🔌 14 Job Sources
+### 🔌 15 Job Sources
 
 **Structured ATS APIs** — direct structured API polling of 9 platforms, no scraping, no JS rendering:
 
@@ -140,6 +140,7 @@ All companies are listed in `companies.yaml`. Per-company caps prevent any singl
 | **HackerNews "Who is Hiring?"** | Parses monthly HN thread via Algolia API. Self-healing auto-discovery — no manual thread ID updates ever needed |
 | **Reddit Job Feeds** | r/cscareerquestions, r/IndiaJobs, and related subreddits via RSS |
 | **Jobicy / RemoteOK** | Remote jobs JSON APIs. Good for catching remote-first companies open to India timezone candidates |
+| **hiring.cafe** | Aggregated ATS jobs via internal Next.js API. Rich structured data — server-side filtered by seniority, department, location. ~50 high-signal jobs per run |
 
 ---
 
@@ -243,6 +244,7 @@ jobradar/
 │   ├── reddit.py              # Reddit RSS feeds
 │   ├── jobicy.py              # Jobicy.com — remote jobs JSON API
 │   ├── remoteok.py            # RemoteOK — JSON API
+│   ├── hiringcafe.py          # hiring.cafe — Next.js API, entry-level filtered
 │   ├── cutshort.py            # Cutshort.io API (currently disabled)
 │   ├── instahyre.py           # Instahyre API + scraper fallback (currently disabled)
 │   └── wellfound.py           # Wellfound/AngelList (currently disabled — blocks bots)
