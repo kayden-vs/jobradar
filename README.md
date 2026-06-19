@@ -62,7 +62,7 @@ Urgent alerts fire the moment a high-scoring job is found. Every run ends with a
 ┌─────────────────────────────────────────────────┐
 │         16 Job Sources (Concurrent)             │
 │  ATS APIs · Workday · YC · hackernews · Naukri  │
-│  hiring.cafe · Blogs RSS · Serper · HN · More    │
+│  hiringcafe · Blogs RSS · Serper · HN · More    │
 └────────────────────────┬────────────────────────┘
                          │ ~8,000–9,000 raw jobs
                          ▼
