@@ -32,6 +32,13 @@ if [ $? -ne 0 ]; then
     echo "WARNING: pip install failed, continuing with existing code" >> "$LOG_FILE"
 fi
 
+# ── Start the application tracker bot in the background ──────────────────────
+# This makes /applied, /status etc. available for the entire duration of the run.
+echo "Starting tracker bot: $(date)" >> "$LOG_FILE"
+python -m notify.tracker_bot >> "$LOG_FILE" 2>&1 &
+TRACKER_BOT_PID=$!
+echo "Tracker bot PID: $TRACKER_BOT_PID" >> "$LOG_FILE"
+
 # kill Python after 60 minutes if it hangs
 timeout 3600 python main.py >> "$LOG_FILE" 2>&1
 EXIT_CODE=$?
@@ -50,5 +57,13 @@ elif [ $EXIT_CODE -ne 0 ]; then
         -d text="❌ JobRadar failed (exit $EXIT_CODE):%0A$(echo "$TAIL" | head -c 3000)" \
         > /dev/null 2>&1
 fi
+
+# ── Run follow-up check (7-day drafts + 14-day dead marking) ─────────────────
+echo "Running follow-up check: $(date)" >> "$LOG_FILE"
+timeout 60 python -m notify.followup_check >> "$LOG_FILE" 2>&1
+
+# ── Stop the tracker bot now that the instance is about to shut down ──────────
+echo "Stopping tracker bot (PID $TRACKER_BOT_PID): $(date)" >> "$LOG_FILE"
+kill "$TRACKER_BOT_PID" 2>/dev/null || true
 
 # trap handles shutdown

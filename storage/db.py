@@ -146,6 +146,31 @@ def init_db(db_path: str | None = None):
             sent_at  TEXT NOT NULL      -- full ISO datetime of when it was sent
         )
     """)
+
+    # ── Application tracker ───────────────────────────────────────────────────
+    # Tracks jobs you applied to, sends follow-up drafts at day 7, marks
+    # applications dead at day 14 with no response.
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS applications (
+            id               INTEGER PRIMARY KEY AUTOINCREMENT,
+            url              TEXT NOT NULL UNIQUE,   -- job posting URL (canonical key)
+            company          TEXT DEFAULT '',
+            title            TEXT DEFAULT '',
+            applied_at       TEXT NOT NULL,          -- ISO datetime of /applied command
+            status           TEXT DEFAULT 'applied', -- applied | followup_sent | dead | responded
+            followup_sent_at TEXT DEFAULT NULL,      -- ISO datetime followup draft was sent
+            notes            TEXT DEFAULT ''
+        )
+    """)
+    # Safe no-op migrations for applications table
+    for col_def in [
+        "ALTER TABLE applications ADD COLUMN notes TEXT DEFAULT ''",
+    ]:
+        try:
+            conn.execute(col_def)
+        except Exception:
+            pass
+
     conn.commit()
     conn.close()
 
@@ -301,3 +326,132 @@ def mark_weekly_summary_sent(db_path: str | None = None):
     )
     conn.commit()
     conn.close()
+
+
+# ─────────────────────────────────────────────────────────────────
+# APPLICATION TRACKER
+# ─────────────────────────────────────────────────────────────────
+
+def log_application(
+    url:     str,
+    company: str = "",
+    title:   str = "",
+    db_path: str | None = None,
+) -> bool:
+    """Log a job application. Returns True if newly inserted, False if already tracked."""
+    from datetime import datetime
+    applied_at = datetime.now().isoformat()
+    conn = sqlite3.connect(_db(db_path))
+    try:
+        conn.execute(
+            "INSERT INTO applications (url, company, title, applied_at) VALUES (?,?,?,?)",
+            (url.strip().rstrip("/"), company, title, applied_at),
+        )
+        conn.commit()
+        return True
+    except sqlite3.IntegrityError:
+        # UNIQUE constraint on url — already tracked
+        return False
+    finally:
+        conn.close()
+
+
+def get_applications_pending_followup(db_path: str | None = None) -> list[dict]:
+    """Return applications that are 7+ days old with no response and no followup sent yet."""
+    from datetime import datetime, timedelta
+    threshold = (datetime.now() - timedelta(days=7)).isoformat()
+    conn = sqlite3.connect(_db(db_path))
+    rows = conn.execute(
+        """
+        SELECT id, url, company, title, applied_at
+        FROM applications
+        WHERE status = 'applied'
+          AND followup_sent_at IS NULL
+          AND applied_at <= ?
+        ORDER BY applied_at ASC
+        """,
+        (threshold,),
+    ).fetchall()
+    conn.close()
+    return [
+        dict(zip(["id", "url", "company", "title", "applied_at"], row))
+        for row in rows
+    ]
+
+
+def get_applications_pending_dead(db_path: str | None = None) -> list[dict]:
+    """Return applications that are 14+ days old and still active (applied or followup sent)."""
+    from datetime import datetime, timedelta
+    threshold = (datetime.now() - timedelta(days=14)).isoformat()
+    conn = sqlite3.connect(_db(db_path))
+    rows = conn.execute(
+        """
+        SELECT id, url, company, title, applied_at
+        FROM applications
+        WHERE status IN ('applied', 'followup_sent')
+          AND applied_at <= ?
+        ORDER BY applied_at ASC
+        """,
+        (threshold,),
+    ).fetchall()
+    conn.close()
+    return [
+        dict(zip(["id", "url", "company", "title", "applied_at"], row))
+        for row in rows
+    ]
+
+
+def mark_followup_sent(app_id: int, db_path: str | None = None):
+    """Record that the followup draft was sent for this application."""
+    from datetime import datetime
+    conn = sqlite3.connect(_db(db_path))
+    conn.execute(
+        "UPDATE applications SET status='followup_sent', followup_sent_at=? WHERE id=?",
+        (datetime.now().isoformat(), app_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def mark_application_dead(app_id: int, db_path: str | None = None):
+    """Mark an application as dead (no response after 14 days)."""
+    conn = sqlite3.connect(_db(db_path))
+    conn.execute(
+        "UPDATE applications SET status='dead' WHERE id=?",
+        (app_id,),
+    )
+    conn.commit()
+    conn.close()
+
+
+def mark_application_responded(url: str, db_path: str | None = None) -> bool:
+    """Mark an application as responded. Returns True if it was found."""
+    conn = sqlite3.connect(_db(db_path))
+    cursor = conn.execute(
+        "UPDATE applications SET status='responded' WHERE url=? AND status != 'responded'",
+        (url.strip().rstrip("/"),),
+    )
+    conn.commit()
+    found = cursor.rowcount > 0
+    conn.close()
+    return found
+
+
+def get_all_applications(db_path: str | None = None) -> list[dict]:
+    """Return all tracked applications ordered by applied_at desc."""
+    conn = sqlite3.connect(_db(db_path))
+    rows = conn.execute(
+        """
+        SELECT id, url, company, title, applied_at, status, followup_sent_at
+        FROM applications
+        ORDER BY applied_at DESC
+        """
+    ).fetchall()
+    conn.close()
+    return [
+        dict(zip(
+            ["id", "url", "company", "title", "applied_at", "status", "followup_sent_at"],
+            row,
+        ))
+        for row in rows
+    ]

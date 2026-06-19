@@ -180,3 +180,26 @@ def send_session_divider(
         urgent        = urgent,
         chat_id       = chat_id,
     ))
+
+
+def send_startup_notification(chat_id: str = ""):
+    """
+    Send a single short line at pipeline start so the user knows EC2 is up
+    and Telegram commands are available. Plain text — no formatting, no noise.
+    Fails fast (3s timeout) so local runs aren't blocked when Telegram is unreachable.
+    """
+    async def _send():
+        effective_chat_id = chat_id or TELEGRAM_CHAT_ID
+        bot = Bot(token=TELEGRAM_BOT_TOKEN)
+        try:
+            await bot.send_message(
+                chat_id      = effective_chat_id,
+                text         = "⚡ JobRadar started — EC2 is up, bot commands active.",
+                read_timeout = 3,
+                write_timeout = 3,
+                connect_timeout = 3,
+            )
+        except Exception as e:
+            logger.warning(f"Startup notification failed (Telegram unreachable?): {e}")
+
+    asyncio.run(_send())

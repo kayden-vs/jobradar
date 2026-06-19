@@ -70,7 +70,7 @@ from sources.hiringcafe import fetch_hiringcafe
 from pipeline.dedup import deduplicate
 from pipeline.prefilter import prefilter, load_profile
 from pipeline.scorer import score_all
-from notify.telegram_bot import notify_urgent_jobs, send_session_divider
+from notify.telegram_bot import notify_urgent_jobs, send_session_divider, send_startup_notification
 from notify.weekly_summary import send_weekly_summary_if_due
 
 
@@ -121,6 +121,10 @@ def run(profile_path: str, dry_run: bool = False):
             "telegram_chat_id is not set in profile or TELEGRAM_CHAT_ID env var — "
             "Telegram notifications will fail"
         )
+
+    # ── Startup notification — tells user EC2 is up & bot commands are live ──
+    if not dry_run:
+        send_startup_notification(chat_id)
 
     # ── Dry-run: validate config and exit without hitting any APIs ────────────
     if dry_run:
