@@ -250,6 +250,22 @@ def score_job(job: dict, profile: dict) -> dict:
             desc = job["description"]
     job.pop("_naukri_job_id", None)   # strip internal key before any persistence
 
+    # ── Lazy description fetch (workday) ───────────────────────────────────────
+    # Workday list endpoint returns only title/location/postedOn — no JD.
+    # The full HTML description is fetched HERE (after prefilter) from the
+    # detail endpoint to avoid calling it for the ~80% of jobs prefilter drops.
+    if job.get("_workday_detail_path") and len(desc) < 150:
+        logger.debug(f"Lazy-fetching Workday JD for {job.get('title', '?')}")
+        from sources.workday import lazy_fetch_workday_detail
+        fetched = lazy_fetch_workday_detail(job)
+        if fetched:
+            job["description"] = fetched
+            desc = job["description"]
+    job.pop("_workday_detail_path", None)   # strip internal keys before persistence
+    job.pop("_workday_tenant", None)
+    job.pop("_workday_wd_server", None)
+    job.pop("_workday_site", None)
+
     # ── Pre-Groq expiry scan on fetched description ───────────────────────────
     # After fetching the full body, scan for closure/deadline signals.
     # Catches stale blog posts where the page says "Application Closed" or
@@ -409,7 +425,7 @@ def score_all(
     # TOP-ranked N jobs per company instead of the first-fetched N.
     hard_reject_cfg = profile.get("hard_reject", {})
     ats_per_company_cap = hard_reject_cfg.get("ats_per_company_cap", 25)
-    _ATS_SOURCES_SET = {"greenhouse", "greenhouse_eu", "lever", "ashby", "workable"}
+    _ATS_SOURCES_SET = {"greenhouse", "greenhouse_eu", "lever", "ashby", "workable", "workday"}
     ranked_company_counts: dict[str, int] = {}
     capped_post_rank: list[str] = []
     filtered_jobs = []

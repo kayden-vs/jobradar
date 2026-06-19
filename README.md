@@ -7,14 +7,14 @@
 <p align="center">
   <a href="https://python.org"><img src="https://img.shields.io/badge/Python-3.11+-3776AB?style=flat&logo=python&logoColor=white" alt="Python 3.11+"/></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-22c55e?style=flat" alt="MIT License"/></a>
-  <a href="#-15-job-sources"><img src="https://img.shields.io/badge/Job%20Sources-15-7c3aed?style=flat" alt="15 Job Sources"/></a>
+  <a href="#-16-job-sources"><img src="https://img.shields.io/badge/Job%20Sources-16-7c3aed?style=flat" alt="16 Job Sources"/></a>
   <a href="#-performance--api-usage"><img src="https://img.shields.io/badge/API%20Cost-100%25%20Free%20Tier-16a34a?style=flat" alt="100% Free Tier"/></a>
   <a href="docs/setup_guide.md"><img src="https://img.shields.io/badge/docs-Setup%20Guide-0ea5e9?style=flat" alt="Setup Guide"/></a>
 </p>
 
 ---
 
-JobRadar aggregates **15 job sources**, eliminates noise with zero-cost rule-based filters, deduplicates across runs, ranks by relevance, scores with AI, and delivers priority alerts straight to **Telegram** — twice daily, entirely on free-tier APIs.
+JobRadar aggregates **16 job sources**, eliminates noise with zero-cost rule-based filters, deduplicates across runs, ranks by relevance, scores with AI, and delivers priority alerts straight to **Telegram** — twice daily, entirely on free-tier APIs.
 
 Built for freshers, interns, and early-career developers. But **fully configurable for any role, stack, domain, or location via `profile.yaml` alone** — no code changes needed whether you're a cybersecurity candidate, a data engineer, or a mobile developer.
 
@@ -27,7 +27,7 @@ Built for freshers, interns, and early-career developers. But **fully configurab
 
 - [How It Works](#-how-it-works)
 - [Features](#-features)
-  - [15 Job Sources](#-15-job-sources)
+  - [16 Job Sources](#-16-job-sources)
   - [Smart Pre-Filter](#️-smart-pre-filter)
   - [Heuristic Relevance Ranker](#-heuristic-relevance-ranker)
   - [AI Scorer](#-ai-scorer)
@@ -60,9 +60,9 @@ Urgent alerts fire the moment a high-scoring job is found. Every run ends with a
 
 ```
 ┌─────────────────────────────────────────────────┐
-│         15 Job Sources (Concurrent)             │
-│  ATS APIs · YC · Internshala · Naukri · Hirist  │
-│  hiring.cafe · Blogs RSS · Serper · HN · More   │
+│         16 Job Sources (Concurrent)             │
+│  ATS APIs · Workday · YC · hackernews · Naukri  │
+│  hiring.cafe · Blogs RSS · Serper · HN · More    │
 └────────────────────────┬────────────────────────┘
                          │ ~8,000–9,000 raw jobs
                          ▼
@@ -108,9 +108,9 @@ Urgent alerts fire the moment a high-scoring job is found. Every run ends with a
 
 ## ✨ Features
 
-### 🔌 15 Job Sources
+### 🔌 16 Job Sources
 
-**Structured ATS APIs** — direct structured API polling of 9 platforms, no scraping, no JS rendering:
+**Structured ATS APIs** — direct structured API polling of 10 platforms, no scraping, no JS rendering:
 
 | Platform | Example Companies | Notes |
 |---|---|---|
@@ -124,6 +124,7 @@ Urgent alerts fire the moment a high-scoring job is found. Every run ends with a
 | **BambooHR** | Urban Company, Shadowfax, Google, Meta | Subdomain-based URLs |
 | **Recruitee** | Unstop, Salesforce, IBM | Inline HTML description in list response |
 | **Personio** | Open Financial, Amazon, Basecamp | Public XML feed, no auth |
+| **Workday** | Adobe, Samsung, BrowserStack, Cisco, Sprinklr | POST-based API with lazy JD fetch; requires pre-discovered tenant/server/site |
 
 All companies are listed in `companies.yaml`. Per-company caps prevent any single large company from dominating the scoring budget.
 
@@ -233,7 +234,8 @@ jobradar/
 ├── companies.yaml             # ATS company slugs across 9 platforms
 │
 ├── sources/                   # Job fetchers — one file per source
-│   ├── ats.py                 # 9-platform ATS polling
+│   ├── ats.py                 # 9-platform ATS polling (Greenhouse, Lever, Ashby, etc.)
+│   ├── workday.py             # Workday ATS — POST-based API with lazy JD fetch
 │   ├── naukri.py              # Naukri.com — Stage-1 filtered search
 │   ├── hirist.py              # Hirist.tech — India niche tech board
 │   ├── yc.py                  # YC jobs board — two-phase scraper
@@ -402,6 +404,11 @@ curl -s "https://boards.greenhouse.io/v1/boards/SLUG/jobs" | python -m json.tool
 curl -s "https://api.lever.co/v0/postings/SLUG" | python -m json.tool | head -5
 # SmartRecruiters
 curl -s "https://api.smartrecruiters.com/v1/companies/SLUG/postings" | python -m json.tool | head -5
+# Workday (POST-based — requires tenant, wd_server, site)
+curl -s -X POST "https://TENANT.WDSERVER.myworkdayjobs.com/wday/cxs/TENANT/SITE/jobs" \
+  -H "Content-Type: application/json" -H "Accept: application/json" \
+  -H "Origin: https://TENANT.WDSERVER.myworkdayjobs.com" \
+  -d '{"appliedFacets":{},"limit":3,"offset":0,"searchText":""}' | python -m json.tool | head -10
 ```
 
 **Tuning the pre-filter** — adjust `hard_reject.experience_keywords` and `hard_reject.role_blacklist` in `profile.yaml` if too many irrelevant jobs slip through.

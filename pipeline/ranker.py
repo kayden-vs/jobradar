@@ -146,7 +146,7 @@ _BODYSHOP_RE = re.compile(
 )
 
 # ATS sources with structured, reliable location/title fields
-_ATS_SOURCES = {"greenhouse", "greenhouse_eu", "lever", "ashby", "workable"}
+_ATS_SOURCES = {"greenhouse", "greenhouse_eu", "lever", "ashby", "workable", "workday"}
 
 # Internshala stipend extraction
 _STIPEND_NUM_RE = re.compile(r'\d+')

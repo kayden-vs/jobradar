@@ -193,3 +193,43 @@ personio:
   - josh               # Josh
   - amazon             # Amazon India
   - basecamp           # Basecamp
+
+# Workday — list: POST {tenant}.{wd_server}.myworkdayjobs.com/wday/cxs/{tenant}/{site}/jobs
+#           detail: GET  {tenant}.{wd_server}.myworkdayjobs.com/wday/cxs/{tenant}/{site}{externalPath}
+#   NOTE: Each company needs tenant + wd_server + site (discovered via discover_workday.py, not guessable)
+#   NOTE: Entries are dicts, not plain slugs — Workday requires 3 parameters per company
+workday:
+  - name: Proofpoint
+    tenant: proofpoint
+    wd_server: wd5
+    site: proofpointcareers
+
+  - name: Adobe
+    tenant: adobe
+    wd_server: wd5
+    site: external_experienced
+
+  - name: Samsung
+    tenant: sec
+    wd_server: wd3
+    site: Samsung_Careers
+
+  - name: BrowserStack
+    tenant: browserstack
+    wd_server: wd3
+    site: External
+
+  - name: Sprinklr
+    tenant: sprinklr
+    wd_server: wd1
+    site: Careers
+
+  - name: Cisco
+    tenant: cisco
+    wd_server: wd5
+    site: cisco_careers
+
+  - name: Workday
+    tenant: workday
+    wd_server: wd5
+    site: workday

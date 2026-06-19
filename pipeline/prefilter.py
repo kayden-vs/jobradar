@@ -267,7 +267,7 @@ def check_has_meaningful_title(job: dict) -> tuple[bool, str]:
 
 # ATS sources that return structured, machine-readable job data.
 # Used to apply stricter filters that don't make sense for RSS/blog sources.
-_ATS_SOURCES = {"greenhouse", "greenhouse_eu", "lever", "ashby", "workable"}
+_ATS_SOURCES = {"greenhouse", "greenhouse_eu", "lever", "ashby", "workable", "workday"}
 
 # Comprehensive tech-role positive signals for ATS title allow-listing.
 _ATS_TITLE_KEEP_SIGNALS = [

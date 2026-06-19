@@ -6,6 +6,7 @@
 # ─────────────────────────────────────────────────────────────────
 sources:
   ats:            true   # Greenhouse US/EU / Lever / Ashby / Workable API polling
+  workday:        true   # Workday ATS — POST-based API polling (separate from ats due to different pattern)
   cutshort:       false  # Cutshort.io (public API unreliable — disabled)
   instahyre:      false   # Instahyre API + scraping fallback
   wellfound:      false  # DISABLED — blocks requests / shows verification wall

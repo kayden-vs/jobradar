@@ -53,6 +53,7 @@ logger = logging.getLogger("jobradar")
 
 from storage.db import init_db, save_run_stats
 from sources.ats import fetch_all_ats, load_companies
+from sources.workday import fetch_all_workday
 from sources.cutshort import fetch_cutshort
 from sources.instahyre import fetch_instahyre
 from sources.wellfound import fetch_wellfound
@@ -153,6 +154,10 @@ def run(profile_path: str, dry_run: bool = False):
     if source_enabled("ats"):
         logger.info("--- Fetching ATS endpoints (Greenhouse US/EU, Lever, Ashby, Workable) ---")
         raw_jobs.extend(fetch_all_ats(companies))
+
+    if source_enabled("workday"):
+        logger.info("--- Fetching Workday ATS ---")
+        raw_jobs.extend(fetch_all_workday(companies, profile))
 
     if source_enabled("cutshort"):
         logger.info("--- Fetching Cutshort ---")
