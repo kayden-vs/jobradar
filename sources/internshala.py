@@ -68,31 +68,36 @@ def fetch_internshala() -> list[dict]:
                 continue
 
             for card in cards:
-                # Title
-                title_el = card.css(".profile h3, .profile .job-internship-name, h3.job-internship-name")
+                # Title — now in <h2 class="job-internship-name"><a class="job-title-href">
+                # (old layout used <h3> inside a .profile wrapper; that class no longer exists)
+                title_el = card.css("h2.job-internship-name a, .job-internship-name a")
                 title = title_el[0].text.strip() if title_el else ""
 
-                # Company name
-                company_el = card.css(".company_name h4, .company_name a, h4.company-name")
+                # Company name — now in <p class="company-name">
+                # (old layout used <h4 class="company-name"> or <h4> inside .company_name)
+                company_el = card.css("p.company-name")
                 company = company_el[0].text.strip() if company_el else ""
 
-                # Location
-                loc_el = card.css(".locations span, .location_link span, .location span")
+                # Location — text lives inside <a> nested inside .locations span
+                # e.g. <div class="locations"><span><a>Work From Home</a></span></div>
+                # Selecting just `.locations span` gives the <span> whose .text is empty;
+                # we need the nested <a> text instead.
+                loc_el = card.css(".locations span a, .locations a")
                 location = loc_el[0].text.strip() if loc_el else "India"
                 # Normalise "Work From Home" → "Remote"
                 if "home" in location.lower() or "wfh" in location.lower():
                     location = "Remote"
 
-                # Stipend
-                stipend_el = card.css(".stipend, .stipend_container .stipend")
+                # Stipend — .stipend still works
+                stipend_el = card.css(".stipend")
                 stipend = stipend_el[0].text.strip() if stipend_el else ""
 
-                # Application URL
+                # Application URL — <a class="job-title-href"> is the canonical link;
+                # also matches /job/detail/ paths (jobs page) in addition to /internship/detail/
                 link_el = card.css(
-                    "a.view_detail_button, "
+                    "a.job-title-href, "
                     "a[href*='/internship/detail/'], "
-                    "a[href*='/job-detail/'], "
-                    "a.job_title"
+                    "a[href*='/job/detail/']"
                 )
                 href = link_el[0].attrib.get("href", "") if link_el else ""
                 job_url = ("https://internshala.com" + href) if href.startswith("/") else href
