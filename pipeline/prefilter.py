@@ -269,7 +269,14 @@ def check_has_meaningful_title(job: dict) -> tuple[bool, str]:
 # Used to apply stricter filters that don't make sense for RSS/blog sources.
 _ATS_SOURCES = {"greenhouse", "greenhouse_eu", "lever", "ashby", "workable", "workday"}
 
+# Sources with freeform but curated titles (not ATS but not open blog text either).
+# These get their own strict mode — see _INTERNSHALA_TITLE_RE below.
+_INTERNSHALA_SOURCES = {"internshala"}
+
 # Comprehensive tech-role positive signals for ATS title allow-listing.
+# NOTE: these are raw substrings, which is safe for clean ATS titles like
+# "Backend Engineer" but NOT for Internshala-style titles like
+# "Backend Development" (where "dev" would match "Business Development").
 _ATS_TITLE_KEEP_SIGNALS = [
     # Role types
     "engineer", "developer", "dev", "programmer", "sde", "swe", "intern",
@@ -287,19 +294,67 @@ _ATS_TITLE_KEEP_SIGNALS = [
     "api", "server", "microservice", "ml engineer", "software",
 ]
 
+# Internshala-specific strict allow-list using WORD-BOUNDARY regex.
+#
+# Why a separate list?
+# Internshala titles are freeform strings like "Backend Development" or
+# "Business Development (Sales)".  The ATS substring list is unsafe here:
+#   • "dev"    matches "Business De**v**elopment" — false positive
+#   • "intern" matches "Medical Writing With **Intern**ship Opportunity" — false positive
+#   • "node"   matches "Zara**node**" — unlikely but possible
+#
+# These patterns use \b word boundaries so "engineer" only matches as a whole
+# word, not as part of "engineering intern" would still match "engineer".
+# The list is intentionally narrower than the ATS list — we only want roles
+# that are explicitly software/backend oriented.
+_INTERNSHALA_TITLE_RE = re.compile(
+    r'\b(engineer|developer|programmer|sde|swe)\b'
+    r'|\b(backend|back.end|fullstack|full.stack|mern|mean|node\.?js|nodejs|golang|typescript|python|java|rust|c\+\+|scala|kotlin|django|fastapi|spring|devops|microservice|api|software)\b'
+    r'|\bbackend\s+development\b'
+    r'|\bfull.?stack\s+development\b'
+    r'|\bweb\s+development\b'    # keep for now but lower-signal
+    r'|\bdata\s+engineer'
+    r'|\bplatform\b|\binfrastructure\b|\bcloud\b|\bsre\b',
+    re.IGNORECASE,
+)
+
+# Internshala titles that match the above but are NOT tech engineering roles.
+# Applied as a secondary reject AFTER the allow-list match to block false positives.
+_INTERNSHALA_TITLE_REJECT_RE = re.compile(
+    r'\bbusiness\s+development\b'    # "Business Development (Sales)" — not SWE
+    r'|\bproduct\s+development\b'    # "Product Development" — ambiguous, not SWE
+    r'|\bno.code\b'                  # "No Code Development"
+    r'|\bphp\b'                      # PHP not in candidate stack
+    r'|\bfront.?end\b(?!.*back)'     # Pure frontend with no backend mention
+    r'|\banimation\b|\bgame\s+dev'   # Creative roles
+    r'|\bai\s+(blog|data\s+analytic|content|writing)\b'  # AI content, not engineering
+    r'|\bweb\s+development\s*$'      # Bare "Web Development" with no tech qualifier — too generic
+    r'|\bai\s+web\s+development\b',  # Broad AI web scope, not backend
+    re.IGNORECASE,
+)
+
 
 def check_title_relevance(title: str, source: str = "") -> tuple[bool, str]:
     """
     Positive / negative title filter before the AI scorer.
 
-    For ATS sources (greenhouse, lever, ashby, workable):
-      Uses strict POSITIVE allow-list only — if the title contains no recognised
-      tech signal, it is rejected.  This is safe because ATS titles are clean
-      and structured (no freeform blog text).
+    Three modes depending on source:
 
-    For all other sources (RSS blogs, HN, Serper, etc.):
-      Falls back to the original lenient logic — blocklist check only,
-      with a pass-by-default for ambiguous titles.
+    1. ATS sources (greenhouse, lever, ashby, workable, workday):
+       Strict POSITIVE allow-list via substring matching — safe because ATS
+       titles are clean and short (e.g. "Backend Engineer", "SDE Intern").
+
+    2. Internshala:
+       Strict POSITIVE allow-list via word-boundary REGEX — necessary because
+       Internshala titles are freeform strings like "Backend Development" or
+       "Business Development (Sales)". Raw substring "dev" would match the
+       latter; \b word boundaries prevent those false positives.
+       A secondary reject regex further blocks known false-positive patterns
+       (Business Development, PHP, pure frontend, No Code, etc.).
+
+    3. All other sources (RSS blogs, HN, Serper, etc.):
+       Lenient blocklist-only mode — rejects obvious non-tech roles but
+       passes ambiguous titles through to the AI scorer.
     """
     title_lower = title.lower()
 
@@ -325,6 +380,19 @@ def check_title_relevance(title: str, source: str = "") -> tuple[bool, str]:
                 return False, ""  # Tech signal found — keep
         # No tech signal found — reject (safe because ATS titles are clean)
         return True, f"ATS title has no tech signal: '{title}'"
+
+    # ── Internshala strict mode: word-boundary regex allow-list ──────────
+    # Uses regex \b boundaries to avoid "dev" matching "Business Development",
+    # "intern" matching "Internship Opportunity", etc.
+    if source in _INTERNSHALA_SOURCES:
+        m = _INTERNSHALA_TITLE_RE.search(title)
+        if not m:
+            return True, f"Internshala title has no tech signal: '{title}'"
+        # Tech signal found — but check secondary reject patterns (false positives)
+        reject_m = _INTERNSHALA_TITLE_REJECT_RE.search(title)
+        if reject_m:
+            return True, f"Internshala title rejected (false positive pattern): '{reject_m.group(0).strip()}'"
+        return False, ""
 
     # ── Non-ATS lenient mode (original logic) ────────────────────────────
     keep_signals = [
