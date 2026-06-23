@@ -23,8 +23,7 @@ source venv/bin/activate
 # Untracked files (data/, .env, venv/) are untouched — no git clean.
 echo "Syncing code with remote: $(date)" >> "$LOG_FILE"
 git fetch origin >> "$LOG_FILE" 2>&1
-BRANCH=$(git rev-parse --abbrev-ref HEAD)
-git reset --hard "origin/${BRANCH}" >> "$LOG_FILE" 2>&1
+git reset --hard "origin/main" >> "$LOG_FILE" 2>&1
 if [ $? -ne 0 ]; then
     echo "WARNING: git reset --hard failed, continuing with existing code" >> "$LOG_FILE"
 fi
