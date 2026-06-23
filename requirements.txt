@@ -2,7 +2,7 @@ scrapling[fetchers]
 requests
 feedparser
 groq
-python-telegram-bot==20.7
+python-telegram-bot>=21.0
 pyyaml
 python-dotenv
 schedule

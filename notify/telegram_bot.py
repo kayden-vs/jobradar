@@ -2,6 +2,7 @@ import os
 import re
 import asyncio
 import logging
+import requests as _requests
 from telegram import Bot
 from telegram.constants import ParseMode
 
@@ -181,25 +182,35 @@ def send_session_divider(
         chat_id       = chat_id,
     ))
 
-
 def send_startup_notification(chat_id: str = ""):
     """
-    Send a single short line at pipeline start so the user knows EC2 is up
-    and Telegram commands are available. Plain text — no formatting, no noise.
-    Fails fast (3s timeout) so local runs aren't blocked when Telegram is unreachable.
+    Fire-and-forget startup ping via plain HTTP (no asyncio).
+    Tells the user EC2 is up and bot commands are live.
+    Uses requests directly — avoids any asyncio event-loop conflict
+    with the tracker_bot polling process that may already be running.
+    Fails fast with a 4s timeout and always logs the outcome.
     """
-    async def _send():
-        effective_chat_id = chat_id or TELEGRAM_CHAT_ID
-        bot = Bot(token=TELEGRAM_BOT_TOKEN)
-        try:
-            await bot.send_message(
-                chat_id      = effective_chat_id,
-                text         = "⚡ JobRadar started — EC2 is up, bot commands active.",
-                read_timeout = 3,
-                write_timeout = 3,
-                connect_timeout = 3,
-            )
-        except Exception as e:
-            logger.warning(f"Startup notification failed (Telegram unreachable?): {e}")
+    effective_chat_id = chat_id or TELEGRAM_CHAT_ID
+    token = TELEGRAM_BOT_TOKEN
+    if not token or not effective_chat_id:
+        logger.warning("Startup notification skipped: BOT_TOKEN or CHAT_ID not set")
+        return
 
-    asyncio.run(_send())
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    try:
+        resp = _requests.post(
+            url,
+            json={
+                "chat_id": effective_chat_id,
+                "text":    "⚡ JobRadar started — EC2 is up, bot commands active.",
+            },
+            timeout=4,
+        )
+        if resp.ok:
+            logger.info("Startup notification sent to Telegram")
+        else:
+            logger.warning(
+                f"Startup notification HTTP error {resp.status_code}: {resp.text[:200]}"
+            )
+    except Exception as e:
+        logger.warning(f"Startup notification failed ({type(e).__name__}): {e}")
