@@ -18,14 +18,11 @@ sleep 10  # wait for network
 cd /home/ubuntu/jobradar
 source venv/bin/activate
 
-# Force-sync with remote — never fails due to local modifications.
-# git reset --hard discards any local changes on EC2 and snaps to remote.
-# Untracked files (data/, .env, venv/) are untouched — no git clean.
-echo "Syncing code with remote: $(date)" >> "$LOG_FILE"
-git fetch origin >> "$LOG_FILE" 2>&1
-git reset --hard "origin/main" >> "$LOG_FILE" 2>&1
+# Pull latest code before running
+echo "Pulling latest code: $(date)" >> "$LOG_FILE"
+git pull >> "$LOG_FILE" 2>&1
 if [ $? -ne 0 ]; then
-    echo "WARNING: git reset --hard failed, continuing with existing code" >> "$LOG_FILE"
+    echo "WARNING: git pull failed, continuing with existing code" >> "$LOG_FILE"
 fi
 
 # update packages
