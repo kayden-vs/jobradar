@@ -181,36 +181,3 @@ def send_session_divider(
         urgent        = urgent,
         chat_id       = chat_id,
     ))
-
-def send_startup_notification(chat_id: str = ""):
-    """
-    Fire-and-forget startup ping via plain HTTP (no asyncio).
-    Tells the user EC2 is up and bot commands are live.
-    Uses requests directly — avoids any asyncio event-loop conflict
-    with the tracker_bot polling process that may already be running.
-    Fails fast with a 4s timeout and always logs the outcome.
-    """
-    effective_chat_id = chat_id or TELEGRAM_CHAT_ID
-    token = TELEGRAM_BOT_TOKEN
-    if not token or not effective_chat_id:
-        logger.warning("Startup notification skipped: BOT_TOKEN or CHAT_ID not set")
-        return
-
-    url = f"https://api.telegram.org/bot{token}/sendMessage"
-    try:
-        resp = _requests.post(
-            url,
-            json={
-                "chat_id": effective_chat_id,
-                "text":    "⚡ JobRadar started — EC2 is up, bot commands active.",
-            },
-            timeout=4,
-        )
-        if resp.ok:
-            logger.info("Startup notification sent to Telegram")
-        else:
-            logger.warning(
-                f"Startup notification HTTP error {resp.status_code}: {resp.text[:200]}"
-            )
-    except Exception as e:
-        logger.warning(f"Startup notification failed ({type(e).__name__}): {e}")
