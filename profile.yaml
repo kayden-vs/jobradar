@@ -260,8 +260,9 @@ scoring_weights:
 ranker_weights:
 
   # ── Positive signal bonuses ──────────────────────────────────────
-  # "Primary skill" = candidate.skills.strong[0:3] (top 3 strong skills)
+  # "Primary skill" = candidate.skills.strong (deduplicated synonyms, top 3)
   # "Secondary skill" = remaining strong + learning skills
+  # NOTE: v2 deduplicates Go/Golang as one skill, so primary = [Go, TypeScript, REST APIs]
   primary_skill_title:    5    # Primary skill keyword found in job title
   primary_skill_desc:     3    # Primary skill found only in description
   secondary_skill_title:  3    # Secondary skill keyword found in title
@@ -284,20 +285,44 @@ ranker_weights:
   recency_14d:            2    # Posted within 14 days
   recency_30d:            1    # Posted within 30 days
 
-  # ── Penalty signals (Approach 1) ─────────────────────────────────
+  # ── Skill Density (NEW v2) ───────────────────────────────────────
+  # Counts distinct skills found in job text. More matches = stronger.
+  # e.g. Go + gRPC + PostgreSQL + Redis + Docker = 5 distinct skills
+  # Bonus starts from 2nd match (1st is already counted by primary/secondary)
+  skill_density_per_hit:  1    # Bonus per distinct skill matched beyond the first
+  skill_density_max:      6    # Cap on total density bonus
+
+  # ── Concordance & Multiplicative Boosters (NEW v2) ───────────────
+  # These break score flatness by rewarding high-signal combinations.
+  concordance_bonus:      3    # Same primary skill in BOTH title AND description
+  holy_trinity_bonus:     4    # fresher + primary skill + backend ALL in title
+  title_richness_2:       1    # 2 distinct signal types in title
+  title_richness_3:       2    # 3+ distinct signal types in title
+
+  # ── Location Affinity (NEW v2) ───────────────────────────────────
+  # Positive boost for jobs explicitly mentioning India or Remote.
+  # Not a rejection mechanism — differentiates among surviving jobs.
+  location_india_bonus:   2    # Job mentions India city, Remote, or WFH
+
+  # ── Company Tier (NEW v2) ────────────────────────────────────────
+  # Small bonus for companies in the curated companies.yaml list.
+  company_tier_bonus:     1    # Company appears in your tracked companies
+
+  # ── Penalty signals ──────────────────────────────────────────────
   # Negative values push weak jobs further down the queue.
-  penalty_no_skill_match:   -1  # No candidate skill keyword anywhere in job text (reduced: freshers_blogs have partial stub descriptions, -3 was too aggressive)
+  penalty_no_skill_match:   -3  # No candidate skill keyword anywhere in job text (lazy-fetch sources exempt)
   penalty_generic_title:    -2  # Title has no recognisable tech/role signal
   penalty_bodyshop_company: -1  # Company looks like a staffing / outsourcing firm
-  penalty_ats_stub_desc:    -2  # ATS job with description shorter than threshold
+  penalty_ats_stub_desc:    -2  # ATS job with description shorter than threshold (lazy-fetch sources exempt)
   ats_stub_desc_threshold:  300 # Min chars for ATS description to avoid stub penalty
+  penalty_role_mismatch:    -4  # Clearly non-backend role (TechOps, IT Ops, Support, etc.)
 
-  # ── Synergy bonuses (Approach 1) ─────────────────────────────────
+  # ── Synergy bonuses ──────────────────────────────────────────────
   # High-precision combos the AI consistently scores ≥9.
   synergy_skill_domain:   3    # Primary skill AND a high-priority domain both present
   synergy_skill_project:  2    # Primary skill AND a project relevance signal both present
 
-  # ── Source-aware adjustments (Approach 2) ────────────────────────
+  # ── Source-aware adjustments ─────────────────────────────────────
   # Applied AFTER all other scoring to reflect data quality per source.
   source_internshala_stipend_bonus:  2      # Internshala job + stipend ≥ min below
   source_internshala_stipend_min:    10000  # INR/month threshold for stipend bonus

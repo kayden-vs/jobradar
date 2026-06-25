@@ -210,8 +210,7 @@ async def cmd_applications(update: Update, context: ContextTypes.DEFAULT_TYPE):
         date      = _fmt_date(app["applied_at"])
         company   = app.get("company") or "?"
         url       = app["url"]
-        short_url = url if len(url) <= 55 else url[:52] + "…"
-        return f"{emoji} {company} — {date}\n   {short_url}"
+        return f"{emoji} {company} — {date}\n   {url}"
 
     for label, items in [
         ("⏳ Waiting for response:", active),
