@@ -175,16 +175,12 @@ rippling:
 bamboohr:
   - urban              # Urban Company
   - shadowfax          # Shadowfax
-  - google             # Google India
-  - meta               # Meta India
   - flyio              # Fly.io
 
 # Recruitee — list: {SLUG}.recruitee.com/api/offers/  (JSON, description inside)
 #             page: {SLUG}.recruitee.com/
 recruitee:
-  - unstop             # Unstop
   - salesforce         # Salesforce India
-  - ibm                # IBM India
 
 # Personio — list: {SLUG}.jobs.personio.de/xml?language=en  (XML feed, no auth needed)
 #            page: {SLUG}.jobs.personio.de/
