@@ -1,0 +1,6 @@
+[tool.pytest.ini_options]
+# Make the project root importable without setting PYTHONPATH manually
+pythonpath = ["."]
+testpaths = ["tests"]
+# Show short test summaries for all outcomes
+addopts = ["-ra", "-q"]

@@ -4,6 +4,20 @@
 
 ---
 
+## [2026-07-01] Comprehensive test suite — 461 tests, all sources covered
+**What**: Built a full test suite from scratch covering all pipeline components and every data source:
+- 17 test files, 461 tests, 0 failures — runs in ~2 minutes
+- Sources: ATS (Greenhouse/Lever/Ashby/Workable/Workday), Jobicy, RemoteOK, Reddit, freshers_blogs, HackerNews, Naukri, Hirist, Internshala, hiring.cafe, utils
+- Pipeline: prefilter (all 15+ rules), dedup, ranker (`ProfilePatterns` NamedTuple, `_resolve_weights`, ranking order)
+- Storage: `_normalize`, `make_job_id`, `is_duplicate`, `save_job`, run stats, application tracker CRUD
+- All tests use mocked HTTP (no real network calls). Groq AI mocked via `unittest.mock`.
+- Added `pyproject.toml` with `pythonpath = ["."]` so bare `pytest` works without `PYTHONPATH`.
+**Why**: Enable fast, isolated verification that a source or pipeline component is broken after any code change.
+**Files**: `tests/__init__.py`, `tests/conftest.py`, `tests/test_pipeline_dedup.py`, `tests/test_pipeline_prefilter.py`, `tests/test_pipeline_ranker.py`, `tests/test_storage_db.py`, `tests/test_sources_ats.py`, `tests/test_sources_freshers_blogs.py`, `tests/test_sources_hackernews.py`, `tests/test_sources_hiringcafe.py`, `tests/test_sources_hirist.py`, `tests/test_sources_internshala.py`, `tests/test_sources_jobicy.py`, `tests/test_sources_naukri.py`, `tests/test_sources_reddit.py`, `tests/test_sources_remoteok.py`, `tests/test_sources_utils.py`, `pyproject.toml`
+**Status**: Complete
+
+---
+
 ## [2026-06-30] Ranker v3 improvements: cap, title dedup, seniority penalty
 **What**: Three targeted improvements based on v3 run analysis (795 jobs, Jun 30):
 1. Lowered `max_ai_jobs_per_run` from 200 → 130 (v3 token budget only scored ~103 jobs, 97 cap slots were wasted)

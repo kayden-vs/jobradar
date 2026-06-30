@@ -140,3 +140,20 @@ Each entry documents a significant design decision: what was decided, why, and w
 - Score 3 example shows a clearly poor match.
 - Combined with token-saving rules (empty fields for score <6), this keeps response costs low.
 **Alternatives**: Zero-shot (inconsistent scores). Fine-tuning (not available on Groq free tier). More examples (diminishing returns, wastes tokens).
+
+---
+
+## ADR-011: Test Suite — Mocking Strategy
+
+**Date**: 2026-07-01
+**Decision**: All tests mock HTTP at the `requests.get` / session layer; feedparser entries use `SimpleNamespace`; Groq calls use `unittest.mock.patch`.
+**Context**: Sources make real network calls to many external APIs. Tests must be deterministic, fast, and offline.
+**Rationale**:
+- `@patch("sources.X.requests.get")` with `side_effect` lists allows precise per-call control without real I/O.
+- `feedparser` entries must be `SimpleNamespace` objects (not `MagicMock`) because source code calls `re.sub()` on entry attributes directly — `MagicMock` attributes return `MagicMock` objects, causing `TypeError: expected string or bytes-like object`.
+- `hiring.cafe` uses `requests.Session` internally (`_get_session()`), not bare `requests.get`. Tests patch both `requests.get` (used by `_fetch_build_id`) and `_get_session` (used by `_fetch_page`) separately.
+- `ProfilePatterns` is a `NamedTuple`, not a `dict` — tests access fields by attribute (`.primary_skill_re`), not by string key.
+- Module-level caches (`_cached_build_id`, `_session`, `_PLAYWRIGHT_AVAILABLE`) are reset in `setup_method` to prevent inter-test leakage.
+**Alternatives**: Real integration tests (too slow, flaky, require live API keys). Full `requests_mock` library (adds a dependency; `unittest.mock` is sufficient).
+**Status**: Established pattern — follow for all future source tests.
+
