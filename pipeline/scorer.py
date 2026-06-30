@@ -418,22 +418,40 @@ def score_all(
         profile=profile,
     )
 
-    # ── Step 2a: Post-ranking ATS per-company cap ─────────────────────────
+    # ── Step 2a: Post-ranking ATS per-company cap + title dedup ─────────
     # The prefilter has a safety ceiling (100/company) to prevent runaway
     # single-company domination. Here, AFTER ranking, we apply the real
     # per-company cap (ats_per_company_cap, default 25) so we keep the
     # TOP-ranked N jobs per company instead of the first-fetched N.
+    #
+    # Title dedup: within ATS sources, skip duplicate (company, title) pairs.
+    # v3 run wasted 11 AI calls on "Staff Production Engineer @ Canva" ×4
+    # and "Technical Services Engineer @ Mongodb" ×3. These are identical
+    # listings with different URLs — URL-based dedup doesn't catch them.
     hard_reject_cfg = profile.get("hard_reject", {})
     ats_per_company_cap = hard_reject_cfg.get("ats_per_company_cap", 25)
     _ATS_SOURCES_SET = {"greenhouse", "greenhouse_eu", "lever", "ashby", "workable", "workday"}
     ranked_company_counts: dict[str, int] = {}
+    seen_ats_titles: set[tuple[str, str]] = set()  # (company_lower, title_normalized)
     capped_post_rank: list[str] = []
+    title_deduped: int = 0
     filtered_jobs = []
     for job in jobs:
         src = job.get("source", "")
         if src in _ATS_SOURCES_SET:
             co = job.get("company", "")
-            n  = ranked_company_counts.get(co, 0)
+            co_lower = co.lower().strip()
+            title_norm = job.get("title", "").lower().strip()
+
+            # Title-level dedup: skip identical (company, title) pairs
+            title_key = (co_lower, title_norm)
+            if title_key in seen_ats_titles:
+                title_deduped += 1
+                continue
+            seen_ats_titles.add(title_key)
+
+            # Per-company cap
+            n = ranked_company_counts.get(co, 0)
             if n >= ats_per_company_cap:
                 capped_post_rank.append(co)
                 continue
@@ -445,6 +463,11 @@ def score_all(
         logger.info(
             f"Post-ranking ATS cap ({ats_per_company_cap}/company): dropped lower-ranked "
             f"surplus from — {', '.join(unique_capped)}"
+        )
+    if title_deduped:
+        logger.info(
+            f"Post-ranking title dedup: dropped {title_deduped} duplicate "
+            f"(company, title) pairs from ATS sources"
         )
 
     # ── Step 2b: Hard fallback cap (absolute worst-case guard) ────────────

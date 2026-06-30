@@ -4,6 +4,17 @@
 
 ---
 
+## [2026-06-30] Ranker v3 improvements: cap, title dedup, seniority penalty
+**What**: Three targeted improvements based on v3 run analysis (795 jobs, Jun 30):
+1. Lowered `max_ai_jobs_per_run` from 200 → 130 (v3 token budget only scored ~103 jobs, 97 cap slots were wasted)
+2. Added title-level dedup in scorer.py — skips duplicate `(company, title)` pairs from ATS sources. v3 had "Staff Production Engineer @ Canva" ×4 and "Technical Services Engineer @ Mongodb" ×3 wasting 11 AI calls
+3. Added `_SENIORITY_LEVEL_RE` penalty (`-8`) in ranker.py for Senior/Staff/Principal/Lead/SDE III+ titles. v3 had ~25 senior roles consuming AI tokens, all scored 1-2/10. This is a ranker penalty (not a hard reject) so edge cases survive
+**Why**: v3 score distribution was good (spread=38, IQR=10) but token budget was being wasted on obviously-wrong jobs (senior roles, duplicates). These three changes protect the AI budget without losing legitimate matches.
+**Files**: `profile.yaml`, `pipeline/scorer.py`, `pipeline/ranker.py`
+**Status**: Complete
+
+---
+
 ## [2026-06-30] Initial context system baseline
 **What**: Established the `.agents/` context system (AGENTS.md, SKILL.md, architecture.md, decisions.md, changelog.md) to eliminate repeated AI codebase scans across chat sessions.
 **Why**: Every new Antigravity chat was re-scanning the entire codebase, burning thousands of tokens for context that doesn't change between sessions.

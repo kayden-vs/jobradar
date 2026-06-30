@@ -120,6 +120,7 @@ _DEFAULT_WEIGHTS: dict = {
     "penalty_ats_stub_desc":     -2,  # ATS source + description below threshold
     "ats_stub_desc_threshold":   300,
     "penalty_role_mismatch":     -4,  # clearly non-backend role (TechOps, IT Ops, etc.)
+    "penalty_seniority_level":   -8,  # Senior/Staff/Principal/Lead/SDE III+ in title
     # ── Synergy bonuses ───────────────────────────────────────────────────
     "synergy_skill_domain":   3,   # primary skill AND high-priority domain both found
     "synergy_skill_project":  2,   # primary skill AND a project signal both found
@@ -188,6 +189,21 @@ _ROLE_MISMATCH_RE = re.compile(
     r'|\bsite\s+reliability\b'
     r'|\betl\b|\bbi\s+developer\b|\bbi\s+engineer\b'
     r'|\bembedded\b|\bfirmware\b',
+    re.IGNORECASE,
+)
+
+# NEW v3: Seniority-level mismatch — catches Senior/Staff/Principal/Lead titles
+# that slip through the prefilter role_blacklist. Separate from _ROLE_MISMATCH_RE
+# because the *role* might be fine (Backend Engineer) but the *level* is wrong
+# (Staff/Principal/SDE IV). v3 run showed ~25 senior jobs wasting AI tokens,
+# all scored 1-2/10.
+_SENIORITY_LEVEL_RE = re.compile(
+    r'\bsenior\b|\bstaff\b|\bprincipal\b'
+    r'|\blead\b'
+    r'|\bsde\s*(?:ii?i|iv|[3-9])\b'         # SDE III, SDE IV, SDE 3+
+    r'|\b(?:engineer|developer)\s+(?:ii?i|iv|[3-9])\b'  # "Developer III"
+    r'|\bengineering\s*manager\b'
+    r'|\btech\s*lead\b',
     re.IGNORECASE,
 )
 
@@ -750,6 +766,15 @@ def _penalty_score(
         p = w["penalty_role_mismatch"]
         delta += p
         reasons.append(f"role-mismatch({p:+})")
+
+    # ── Seniority-level mismatch (NEW v3) ─────────────────────────────
+    # Senior/Staff/Principal/Lead/SDE III+ are experience-level mismatches
+    # for a fresher candidate. Stronger penalty than role_mismatch because
+    # seniority is a harder barrier than role type.
+    if _SENIORITY_LEVEL_RE.search(title):
+        p = w["penalty_seniority_level"]
+        delta += p
+        reasons.append(f"seniority-level({p:+})")
 
     # ── Synergy: primary skill + high-priority domain ─────────────────────
     if has_primary_skill and has_high_domain:

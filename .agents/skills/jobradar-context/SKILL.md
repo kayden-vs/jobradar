@@ -96,7 +96,7 @@ Score ≥8 → Telegram push  |  Score 6–7 → Session digest  |  Score <6 →
 **Working sources (12)**: ATS (10 platforms), Workday, Naukri, YC, Internshala, freshers_blogs, Serper, HN, hiring.cafe, Jobicy, RemoteOK
 **Disabled sources (5)**: Cutshort (broken API), Instahyre (API 404), Wellfound (bot blocking), Reddit (wrong content), Hirist (untested/TODO)
 **Deployment**: EC2 t2.micro, auto-starts via EventBridge schedule, runs pipeline, then auto-shuts down
-**Recent focus**: Ranker v2 (skill density, concordance, holy trinity bonuses), weekly summary, application tracker bot
+**Recent focus**: Ranker v3 (seniority penalty, title dedup, cap alignment), weekly summary, application tracker bot
 
 ## Key Numbers
 
@@ -105,7 +105,7 @@ Score ≥8 → Telegram push  |  Score 6–7 → Session digest  |  Score <6 →
 | Groq model | llama-4-scout-17b-16e (MoE, free tier) |
 | Token budget/run | 200K (of 500K TPD ÷ 2 runs/day) |
 | Request interval | 5.0s (12 req/min → 28,800 TPM, under 30K limit) |
-| Max AI jobs/run | ~89 (200K ÷ ~2,240 tokens/job) |
+| Max AI jobs/run | ~103 observed (hard cap: 130) |
 | Serper budget | 25 queries/run (of 2,500/month free) |
 | Pipeline duration | ~17–20 minutes total |
 
