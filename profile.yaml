@@ -334,3 +334,4 @@ ranker_weights:
   source_naukri_stub_penalty:       -1     # Naukri job with stub description (lazy-fetch pending)
   source_naukri_stub_threshold:      150   # Chars below which Naukri desc is treated as a stub
   source_serper_penalty:            -1     # Serper dork result (variable title/desc quality)
+  source_workday_bonus:              2     # Workday companies are curated ATS employers (Cisco, Adobe, Samsung, etc.)

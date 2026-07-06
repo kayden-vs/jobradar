@@ -132,6 +132,7 @@ _DEFAULT_WEIGHTS: dict = {
     "source_naukri_stub_penalty":       -1,
     "source_naukri_stub_threshold":      150,
     "source_serper_penalty":            -1,
+    "source_workday_bonus":              2,   # Workday companies are curated ATS employers (Cisco, Adobe, etc.)
 }
 
 
@@ -805,6 +806,7 @@ def _source_adjustment(job: dict, w: dict) -> tuple[int, list[str]]:
       freshers_blogs + batch match  → w["source_freshers_blog_batch_bonus"] (+1)
       naukri + stub description     → w["source_naukri_stub_penalty"]       (−1)
       serper                        → w["source_serper_penalty"]            (−1)
+      workday                       → w["source_workday_bonus"]             (+2)
     """
     delta   = 0
     reasons = []
@@ -853,6 +855,16 @@ def _source_adjustment(job: dict, w: dict) -> tuple[int, list[str]]:
         p = w["source_serper_penalty"]
         delta += p
         reasons.append(f"serper-quality({p:+})")
+
+    # ── Workday: curated ATS employer bonus ────────────────────────────────────
+    # Workday companies in companies.yaml are curated employers (Cisco,
+    # Adobe, Samsung, BrowserStack, etc.) — structurally reliable ATS data.
+    # Stub description is compact by design; this bonus compensates for the
+    # lower-content stub vs sources that arrive with full descriptions.
+    if source == "workday":
+        b = w.get("source_workday_bonus", 2)
+        delta += b
+        reasons.append(f"workday-curated({b:+})")
 
     return delta, reasons
 
