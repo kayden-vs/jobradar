@@ -146,7 +146,14 @@ candidate:
 hard_reject:
   max_job_age_days: 45              # Tightened: reject jobs older than 45 days
   ats_per_company_cap: 25           # Max ATS jobs per company per run (prevents LinkedIn/Spotify dominance)
-  max_ai_jobs_per_run: 130          # Hard ceiling — all jobs up to this limit are scored (Gemini free tier has no per-run token budget constraint). 130 gives solid coverage of top-ranked jobs; raise if ranker quality improves.
+  max_ai_jobs_per_run: 150          # Raised from 130 → 150 after v6 free-tier audit.
+                                    # Rate limit math (gemini-3.1-flash-lite free tier):
+                                    #   150 jobs × 4.5s = 11.25 min scoring phase (+1.5 min vs 130)
+                                    #   150 × 2 runs/day = 300 RPD = 20% of ~1,500 RPD budget
+                                    #   150 × ~3,150 tok × 2 = 945K TPD = 63% of ~1,500K TPD
+                                    #   RPM: 13.3 req/min, unchanged — safely under 15 RPM
+                                    # Why not higher: ranker scores 131–150 are in heuristic 12–13
+                                    # (below the IQR midpoint). Beyond 150, signal-to-noise drops.
 
   experience_keywords:
     # If ANY of these appear in the job description → immediate reject
@@ -186,6 +193,24 @@ hard_reject:
     - "UI Designer"
     - "UX Designer"
     - "Frontend Developer"            # unless full-stack
+    # Non-SWE roles with "Engineer" in title that bypass the ATS allow-list
+    # (confirmed leaking through in v6 run, scoring 1-3, wasting API calls)
+    - "Sales Engineer"
+    - "Solutions Engineer"
+    - "Customer Engineer"
+    - "Customer Success Engineer"
+    - "Forward Deployed Engineer"
+    - "Revenue Enablement"
+    - "Business Development Representative"
+    - "Sales Development Representative"
+    - "Security Sales"
+    - "Customer Experience Engineer"
+    - "HR Business Partner"
+    - "Designer, Web"
+    - "Internal Audit"
+    - "GTM Engineer"                  # Go-to-market, not backend
+    - "FinOps Engineer"               # Finance ops, not engineering
+    - "PlatformOps Engineer"          # Operations, not SWE
     # Senior / over-qualified roles — always score 1-2, waste token budget
     - "Senior Software"
     - "Senior Backend"
