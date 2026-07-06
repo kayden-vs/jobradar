@@ -10,8 +10,8 @@ from google.genai import types
 
 logger = logging.getLogger(__name__)
 
-# Using Gemini 2.5 Flash — same model as scorer.py
-GEMINI_MODEL = "gemini-2.5-flash"
+# Using Gemini 2.0 Flash — same model as scorer.py (non-thinking, 15 RPM free tier)
+GEMINI_MODEL = "gemini-2.0-flash"
 REQ_INTERVAL = 4.5  # seconds between AI calls — stays under Gemini's ~15 RPM
 _last_call   = 0.0
 

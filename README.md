@@ -186,7 +186,7 @@ All numeric weights are configurable in `profile.yaml → ranker_weights:` witho
 
 ### 🤖 AI Scorer
 
-**Model**: `gemini-2.5-flash` via Google Gemini free tier (Google AI Studio).
+**Model**: `gemini-2.0-flash` via Google Gemini free tier (Google AI Studio). Uses the non-thinking variant for clean JSON mode output.
 
 **Rate limiting:**
 
@@ -384,12 +384,12 @@ Register-ScheduledTask -TaskName "JobRadar" -Action $action -Trigger $trigger -R
 
 | API | Usage per run | Free tier | Headroom |
 |:---|:---|:---|:---|
-| **Gemini (2.5-flash)** | ~455K tokens | ~1.5M tokens/day | 3+ runs/day with room to spare |
+| **Gemini (2.0-flash)** | ~455K tokens | ~1.5M tokens/day | 3+ runs/day with room to spare |
 | **Serper.dev** | 25 queries | 2,500 queries/month | 1,500/month = 60% of free tier |
 | **Telegram Bot** | ~10–15 messages | Unlimited | Free |
 
-**Gemini rate limits** (2.5-flash free tier, approximate — project-level, verify in AI Studio):
-- **RPM**: ~10–15 requests/min → `REQ_INTERVAL = 4.5s` gives ~13.3 RPM (safe headroom)
+**Gemini rate limits** (2.0-flash free tier, confirmed from live run):
+- **RPM**: 15 requests/min → `REQ_INTERVAL = 4.5s` gives ~13.3 RPM (safe headroom)
 - **TPM**: ~1,000,000 tokens/min → no TPM bottleneck (13 req/min × 3,500 tok = 45,500 TPM ≪ 1M limit)
 - **TPD**: ~1,500,000 tokens/day → 130 jobs × 3,500 tok = 455K tokens/run, well within limit
 

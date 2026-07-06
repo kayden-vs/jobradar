@@ -4,6 +4,17 @@
 
 ---
 
+## [2026-07-06] Hotfix: switch gemini-2.5-flash → gemini-2.0-flash (v5 post-mortem)
+**What**: Changed `MODEL` constant from `gemini-2.5-flash` to `gemini-2.0-flash` in `scorer.py` and `hackernews.py`. Bumped `max_output_tokens` from 768 → 1024.
+**Why — two bugs found in the v5 live run**:
+1. `gemini-2.5-flash` free tier is actually **5 RPM** (not 10-15 as expected). At 4.5s intervals (13.3 req/min) we were hitting quota every ~7 requests and getting 429 RESOURCE_EXHAUSTED errors with 20-34s retry delays.
+2. `gemini-2.5-flash` is a **thinking model** — its internal chain-of-thought tokens leak into `response_mime_type=application/json` responses, causing JSON parse errors (`Expecting property name`, `Unterminated string`) on nearly every successful 200 OK response. This is not documented and only discovered from the live run.
+`gemini-2.0-flash` is a non-thinking model with 15 RPM — both problems are eliminated.
+**Files**: `pipeline/scorer.py`, `sources/hackernews.py`, `references/decisions.md`, `references/architecture.md`, `SKILL.md`
+**Status**: Committed to `feat/gemini-scorer` branch.
+
+---
+
 ## [2026-07-06] Migrate AI scorer from Groq → Google Gemini 2.5 Flash (branch: feat/gemini-scorer)
 **What**:
 1. Replaced Groq `llama-4-scout-17b-16e-instruct` with `gemini-2.5-flash` in `pipeline/scorer.py` (model discontinued by Groq)
