@@ -60,21 +60,27 @@ _last_call_ts = 0.0        # module-level timestamp tracker
 # New approach (Gemini): remove TOKEN_BUDGET_PER_RUN as a hard cap.
 #   All jobs up to max_ai_jobs_per_run (130) are scored.
 #   Rate control is purely via the 4.5s inter-request interval.
-#   A 130-job run takes ~10 minutes — acceptable per user preference.
+#   A 150-job run takes ~11 min — acceptable per user preference.
 #
-# Per-job cost estimate (Gemini, 6K char desc):
-#   System prompt + few-shot : ~1,400 tokens
-#   User prompt (profile+JD) : ~1,600 tokens average (6K chars ÷ 4)
-#   Response (full reason)   :  ~500 tokens (no token-saving rules)
-#   ─────────────────────────────────────────────────────────────
-#   Total per job            : ~3,500 tokens (estimated)
-#   130 jobs × 3,500 tok     : ~455,000 tokens/run — well within TPD
+# Per-job cost estimate (Gemini, 7K char desc + thinking_budget=256):
+#   System prompt + few-shot : ~2,000 tokens (richer rubric + more examples)
+#   User prompt (profile+JD) : ~1,900 tokens average (7K chars ÷ 4)
+#   Thinking tokens (hidden) : ~256 tokens (internal reasoning, not in output)
+#   Response (full reason)   :  ~600 tokens (richer structured output)
+#   ─────────────────────────────────────────────────────────────────
+#   Total per job            : ~4,756 tokens (estimated)
+#   150 jobs × 4,756 tok     : ~713,400 tokens/run
+#   × 2 runs/day             : ~1,427K TPD → 95% of 1,500K TPD budget
+#   ─────────────────────────────────────────────────────────────────
+#   Conservative: thinking_budget=256 (cap, not guarantee — typical ~150-250)
+#   If TPD limits hit: reduce DESC_CHAR_LIMIT to 6000 or thinking_budget to 128
 # ─────────────────────────────────────────────────────────────────
-SYSTEM_PROMPT_TOKENS  = 1400     # ~1,400 tokens for system prompt + few-shot
-RESPONSE_TOKENS       = 500      # ~500 tokens per response (full reasons now)
+SYSTEM_PROMPT_TOKENS  = 2000     # ~2,000 tokens (richer rubric + 8 few-shot examples)
+RESPONSE_TOKENS       = 856      # ~600 response + ~256 thinking (both count toward TPM/TPD)
 CHARS_PER_TOKEN       = 4        # standard approximation (1 token ≈ 4 chars)
-DESC_CHAR_LIMIT       = 6000     # Gemini's large context allows richer JD input
-                                  # (was 3000 with Groq — doubled for better accuracy)
+DESC_CHAR_LIMIT       = 7000     # Expanded from 6000 — covers longer Naukri/Internshala JDs
+                                  # where stipend, batch year, and stack appear late in text.
+                                  # Cost: ~250 extra tok/job — well within TPM/TPD budget.
 
 
 def _gemini_client() -> genai.Client:
@@ -122,49 +128,86 @@ _FEW_SHOT_EXAMPLES = """\
 Job: "Backend Engineering Intern" at a fintech startup (India/Remote)
 Description excerpt: "Build REST APIs and microservices. Stack: Go or TypeScript.
   0–1 years experience. Stipend ₹20,000–30,000/month. 2026/2027 batch welcome."
+Dimension analysis: [A] backend engineering ✓ [B] intern/fresher ✓ [C] Go/TS +2 [D] India/Remote ✓
+  [E] fintech +2 [F] startup known ✓ [G] stipend ₹20K+ meets minimum ✓ [H] active ✓
 → Correct score: 9
-→ Reasoning: Backend intern role in a relevant domain (fintech), remote/India
-  acceptable, fresher-friendly, uses candidate's primary stack. Stipend meets
-  minimum. This is the target archetype — score confidently at 9.
+→ Reasoning: Backend intern role in a relevant domain (fintech), remote/India acceptable,
+  fresher-friendly, primary stack. Stipend meets minimum. Target archetype — score at 9.
 → apply_urgency: "high"
 
 ### Example B — Score 7 (good non-Go backend role)
 Job: "Backend Intern (Node.js/TypeScript)" at an Indian SaaS startup, Bangalore/Remote
-Description excerpt: "0–6 months experience required. Build REST APIs using
-  Express/Node.js. TypeScript preferred. Stipend ₹20,000–30,000/month."
+Description excerpt: "0–6 months experience required. Build REST APIs using Express/Node.js.
+  TypeScript preferred. Stipend ₹20,000–30,000/month."
+Dimension analysis: [A] backend engineering ✓ [B] intern 0-6mo ✓ [C] TypeScript +1 [D] India ✓
+  [E] SaaS +1 [F] startup ✓ [G] stipend ₹20K+ ✓ [H] active ✓
 → Correct score: 7
-→ Reasoning: TypeScript/Node.js backend is in the candidate's strong stack.
-  India location and fresher-friendly. Not Go or fintech, so not a 9, but
-  this is a genuinely good match — must not be scored below 7.
+→ Reasoning: TypeScript backend is in candidate's strong stack, India location, fresher-friendly.
+  Not Go or fintech so not a 9. Must not be scored below 7 — this is a genuinely good match.
 → apply_urgency: "medium"
 
 ### Example C — Score 6 (solid adjacent, should surface in digest)
 Job: "Graduate Software Engineer" at a remote-first company (Python/Kafka)
-Description excerpt: "Any location accepted. 2026/2027 batch welcome. Backend
-  focused, Python, REST APIs, message queues. 0 experience required."
+Description excerpt: "Any location accepted. 2026/2027 batch welcome. Backend focused,
+  Python, REST APIs, message queues. 0 experience required."
+Dimension analysis: [A] SWE role ✓ [B] graduate/fresher ✓ [C] Python (backend) 0 [D] remote ✓
+  [E] neutral 0 [F] remote-first ✓ [G] not mentioned, benefit of doubt [H] active ✓
 → Correct score: 6
-→ Reasoning: Remote-first and fresh-batch signals are strong positives.
-  Python is not the candidate's primary stack but the role is backend-adjacent
-  and entry-level. Worth a digest notification — do not score lower than 6.
+→ Reasoning: Remote-first and fresh-batch are strong positives. Python is not primary stack
+  but role is backend-adjacent, entry-level. Worth a digest — do not score lower than 6.
 → apply_urgency: "medium"
 
-### Example D — Score 5 (borderline — save but don't notify)
-Job: "Full Stack Developer Intern (React + Node.js)" at Indian startup, Bangalore
-Description excerpt: "No specific experience required. Build UI components and
-  REST APIs. Bangalore office only."
-→ Correct score: 5
-→ Reasoning: Full-stack role with frontend-heavy framing. Backend component
-  exists but React is the primary focus. On-site Bangalore is acceptable.
-  Save to DB but no urgent or digest notification needed.
+### Example D — Score 4 (unpaid — hard compensation cap)
+Job: "Full Stack Developer Internship" at an Indian startup, Bangalore
+Description excerpt: "No specific experience required. Build REST APIs and UI components.
+  Unpaid internship / no stipend. Great learning opportunity."
+Dimension analysis: [A] full-stack ✓ [B] intern ✓ [C] React+Node mixed [D] India ✓
+  [E] neutral [F] unknown startup [G] UNPAID — hard cap: max score 4 ✗
+→ Correct score: 4
+→ Reasoning: Unpaid internship — candidate's stated minimum is ₹10,000/month. Compensation
+  disqualifier hard-caps this at 4 regardless of other signals.
 → apply_urgency: "low"
 
-### Example E — Score 3 (tech role, poor fit)
-Job: "Junior DevOps Engineer" at TechCorp, Pune (on-site)
-Description excerpt: "2+ years with AWS, Terraform, Jenkins CI/CD required.
-  Must manage production Kubernetes clusters."
+### Example E — Score 2 (aggregate listing page, not a real job)
+Job: "50+ TypeScript Jobs in India - Cutshort" at Cutshort
+Description excerpt: "Browse hundreds of TypeScript jobs on Cutshort. Filter by..."
+Dimension analysis: [A] NOT a job posting — it is a search/listing page ✗
+→ Correct score: 2
+→ Reasoning: This is a job board aggregator page, not an individual job posting.
+  No company, no description, no application details. Score 2 regardless of title keywords.
+→ apply_urgency: "low"
+
+### Example F — Score 3 (talent pipeline form — not a real open role)
+Job: "Talent Pipeline - Product Engineering" at a SaaS company
+Description excerpt: "Not an active job posting. Submit your details to be considered
+  for future Product Engineering openings as they arise."
+Dimension analysis: [A] engineering team ✓ [B] unclear [C] unclear [D] unclear
+  [E] SaaS [F] known company [G] unclear [H] NOT AN ACTIVE ROLE — talent pipeline ✗
 → Correct score: 3
-→ Reasoning: DevOps is on the role blacklist. Requires 2+ years (hard reject
-  signal). Terraform/Jenkins not in candidate's stack.
+→ Reasoning: Talent pipelines are not open positions — no active hiring, no timeline,
+  no guaranteed interview. Score 3 max; candidate's time is better spent on active postings.
+→ apply_urgency: "low"
+
+### Example G — Score 1 (hard reject: wrong role type)
+Job: "Sales Engineer" at a US-only SaaS company
+Description excerpt: "3+ years experience in B2B SaaS sales required. Drive revenue
+  through technical demos and client presentations. Must be based in USA."
+Dimension analysis: [A] SALES, not backend engineering ✗ [B] 3+ yrs ✗ [C] N/A
+  [D] USA on-site only ✗ [E] SaaS [F] known [G] unclear [H] active
+→ Correct score: 1
+→ Reasoning: Sales Engineer is a revenue/customer-facing role, not software engineering.
+  Additionally requires 3+ years and US-only location. Triple disqualification.
+→ apply_urgency: "low"
+
+### Example H — Score 5 (borderline — backend adjacent, weak signals)
+Job: "Full Stack Developer Intern (React + Node.js)" at Indian startup, Bangalore
+Description excerpt: "No specific experience required. Build UI components and
+  REST APIs. Bangalore office only. Stipend ₹15,000/month."
+Dimension analysis: [A] full-stack ✓ [B] intern ✓ [C] Node.js +1 but React-heavy [D] India ✓
+  [E] neutral [F] small startup [G] stipend ₹15K ≥ min ✓ [H] active ✓
+→ Correct score: 5
+→ Reasoning: Full-stack role with frontend-heavy framing. Backend component (REST APIs,
+  Node.js) exists but React is the primary focus. Save to DB but no notification.
 → apply_urgency: "low"
 """
 
@@ -172,19 +215,28 @@ Description excerpt: "2+ years with AWS, Terraform, Jenkins CI/CD required.
 # SYSTEM PROMPT (sent once per request, anchors the model behaviour)
 # ─────────────────────────────────────────────────────────────────
 _SYSTEM_PROMPT = (
-    "You are a precise job relevance scorer for an India-based "
-    "fresher (graduating May 2027) targeting backend engineering "
-    "roles. It is July 2026 — India Go/backend fresher roles are "
-    "extremely rare. Score relative to market reality: a "
-    "TypeScript, Node.js, or Python backend intern role with "
-    "strong India/remote + 0-exp signals should score 6–8, "
-    "not 3–4. A role being 'not Go' is NOT a reason to score below 6 "
-    "if it is otherwise a strong backend fresher match.\n\n"
-    "IMPORTANT: You MUST always provide a non-empty 'reason' field, "
-    "even for low scores (score < 6). The reason must be 1–2 sentences "
-    "explaining the primary rejection reason (wrong role type, too senior, "
-    "wrong location, wrong stack, etc.). This is mandatory — empty reasons "
-    "are not acceptable.\n\n"
+    "You are a precise job relevance scorer for a specific candidate. "
+    "Before assigning a final score, you MUST evaluate EVERY dimension "
+    "listed in the scoring rubric. This prevents pattern-matching to a "
+    "single strong signal and ignoring disqualifiers.\n\n"
+    "Candidate context: India-based fresher (graduating May 2027) targeting "
+    "backend engineering roles. It is July 2026 — India Go/backend fresher "
+    "roles are rare. Score relative to what is realistically available:\n"
+    "  • TypeScript, Node.js, or Python backend intern: score 6–8 (not 3–4)\n"
+    "  • A role being 'not Go' is NOT a reason to score below 6 if it is a "
+    "    strong backend fresher match in other dimensions\n"
+    "  • Sales/Solutions/Customer/GTM 'Engineer' titles are NOT software "
+    "    engineering roles — score 1–2 regardless of company prestige\n\n"
+    "HARD RULES (override all bonuses):\n"
+    "  1. EXPIRY: Any closed/filled/deadline-passed signal → score=1, expired=true\n"
+    "  2. UNPAID: Explicitly unpaid/no stipend → hard cap: score ≤ 4\n"
+    "  3. AGGREGATE PAGE: Job board listing page, not an individual posting → score ≤ 2\n"
+    "  4. TALENT PIPELINE: 'Submit for future consideration' form → score ≤ 3\n"
+    "  5. WRONG ROLE: Sales, marketing, HR, operations, customer success roles → score ≤ 2\n"
+    "  6. SENIOR/LEAD: Requires 2+ years or has Senior/Lead/Staff/Principal in title → score ≤ 3\n"
+    "  7. LOCATION: On-site outside India with no remote option → score ≤ 2\n\n"
+    "MANDATORY: 'reason' field must be non-empty for ALL scores (1–10). "
+    "For score ≥ 6: also fill 'highlights' and 'red_flags'.\n\n"
     "Always respond with valid JSON only — no markdown fences, no extra text.\n\n"
     + _FEW_SHOT_EXAMPLES
 )
@@ -200,10 +252,10 @@ def build_scoring_prompt(job: dict, profile: dict) -> str:
         for p in candidate.get('projects', [])
     )
 
-    # Truncate description at DESC_CHAR_LIMIT (6000 chars).
-    # Gemini's large context window means we can provide richer JD content
-    # vs the old 3000-char Groq limit. This helps for long Internshala/Naukri
-    # JDs where batch year, stipend, and tech stack appear late in the text.
+    # Truncate description at DESC_CHAR_LIMIT (7000 chars).
+    # Gemini's large context window allows richer JD input vs the old 3000-char
+    # Groq limit. 7000 chars (expanded from 6000) covers longer Naukri/Internshala
+    # JDs where stipend, batch year, and tech stack appear late in the text.
     desc = job.get('description', 'No description available')[:DESC_CHAR_LIMIT]
 
     return f"""You are a job relevance scorer for a specific candidate. Score how relevant a job posting is for this person.
@@ -248,51 +300,102 @@ Source: {job.get('source', 'N/A')}
 Job Description:
 {desc}
 
-## SCORING RULES
+## SCORING TASK
 
-Score 1-10 (use the calibration examples in the system prompt as anchors):
-- 10 = Perfect match (backend intern/fresher + India/Remote + exact stack match + great company)
-- 8-9 = Very strong (backend intern/fresher, Go or TypeScript/Node.js, relevant company)
-- 6-7 = Good (backend adjacent, potentially relevant, worth applying)
-- 4-5 = Weak (tangentially related, significant mismatches)
-- 1-3 = Not relevant (wrong role type, too senior, wrong location)
+Evaluate the job below using this structured approach:
 
-Mandatory rules — apply in this exact order, override scoring bonuses:
-1. EXPIRY CHECK (highest priority): If the description contains ANY of these signals—
-   application closed / hiring closed / recruitment closed / position filled /
-   no longer accepting / deadline has passed / last date was [past date]—
-   set score=1, apply_urgency="expired", expired=true. Do NOT apply any bonuses.
-2. Requires >1 year experience: score 1-2 (pre-filter miss, still log it)
-3. Location is outside India AND in-office only: score=1
-4. Post is older than 2 months (check posted dates in description): score 1-3
-5. Go/Golang mentioned: +2 to base score
-6. TypeScript or Node.js backend role: +1 to base score
-7. General backend focus (REST APIs, microservices, databases): +1 to base score
-8. Fintech/crypto/payments company: +2 to base score
-9. Any of candidate's projects are directly relevant: +2 to base score
-10. Internshala source with matching stipend (>=10000 INR/month): slight bonus
+### STEP 1 — DIMENSION ANALYSIS (evaluate each before scoring)
 
-CRITICAL REASON RULE:
-- For ALL scores (including score < 6): always provide a non-empty 'reason' (1-2 sentences).
-- For score >= 6: also fill in 'highlights' and 'red_flags'.
-- For score < 6: 'highlights' and 'red_flags' may be empty lists [], but 'reason' MUST be filled.
+Work through every dimension and determine its signal:
 
-Return ONLY a valid JSON object, no markdown fences:
+[A] ROLE TYPE — Is this actually a backend/SWE/engineering role?
+    PASS signals: backend, SDE, software engineer, full-stack, platform, infrastructure
+    FAIL signals: sales engineer, solutions engineer, customer engineer, GTM engineer,
+      forward deployed engineer, customer success, business development, HR, analyst,
+      designer, operations, QA tester, data scientist, ML engineer, security analyst
+    → If FAIL: hard cap score ≤ 2
+
+[B] SENIORITY — Is this genuinely fresher/entry-level/intern?
+    PASS: intern, fresher, junior, associate, 0–1 year, entry level, graduate trainee,
+      2026/2027 batch, accelerator program (e.g. Binance Accelerator)
+    FAIL: 2+ years required, senior, lead, staff, principal, architect, head of, director
+    → If FAIL: hard cap score ≤ 3
+
+[C] STACK FIT — How well does the stack match candidate's skills?
+    +3: Go/Golang explicitly required or preferred
+    +2: TypeScript backend, Node.js backend (as primary, not just mentioned)
+    +1: Python backend, Rust, gRPC, microservices-heavy
+     0: Java, C#, Scala, other backend languages
+    -1: Primarily frontend (React, Vue, Angular) with backend as secondary
+    -2: No backend at all, or irrelevant stack
+
+[D] LOCATION — Is the location acceptable?
+    PASS: India (any city), Remote, WFH, Worldwide, Anywhere
+    FAIL: USA only / UK only / Europe only / on-site outside India with no remote option
+    → If FAIL: hard cap score ≤ 2
+
+[E] DOMAIN — Company/industry relevance?
+    +2: Fintech, crypto, payments, blockchain, trading, banking tech
+    +1: SaaS, developer tools, infrastructure, API-first, e-commerce backend, cybersecurity
+     0: Generic tech, e-commerce, media, gaming
+    -1: Consulting/staffing/outsourcing firms (body shops)
+
+[F] COMPENSATION — Does it meet the candidate's stated minimum?
+    PASS: stipend mentioned and ≥ ₹10,000/month, OR full-time with CTC ≥ ₹4 LPA,
+          OR compensation not mentioned (benefit of doubt)
+    FAIL: explicitly UNPAID or "no stipend" or "volunteer basis"
+    → If FAIL: hard cap score ≤ 4 (non-negotiable — candidate has a stated minimum)
+
+[G] POSTING TYPE — Is this an actual job opening?
+    PASS: Individual job posting with application link, role description, responsibilities
+    FAIL: Aggregate listing page ("50+ jobs on Cutshort"), talent pipeline
+          ("submit for future consideration"), closed/expired posting, category page
+    → If FAIL: score ≤ 3 (aggregate page ≤ 2, talent pipeline ≤ 3)
+
+[H] EXPIRY — Is the posting still active?
+    Check for: application closed, hiring closed, position filled, no longer accepting,
+    deadline has passed, last date was [past date]
+    → If FAIL: score=1, expired=true, apply_urgency="expired"
+
+[I] PROJECT RELEVANCE — Do candidate's projects match this role?
+    +2: Zaraba (crypto exchange) relevant to fintech/crypto/trading/high-perf systems
+    +2: Sentinel-Proxy relevant to security/infrastructure/proxy/monitoring
+    +1: JobRadar relevant to data pipeline/automation/API integration roles
+    +1: CipherBin relevant to web/Go/PostgreSQL roles
+     0: No project relevance
+
+### STEP 2 — COMBINE DIMENSIONS → FINAL SCORE
+
+Use the dimension scores above to determine the final score:
+- 9–10: Strong PASS on [A][B][C][D], bonus domain/stack, great company
+- 7–8 : PASS on [A][B], good stack fit, India/remote confirmed
+- 5–6 : PASS on [A], weak or mixed stack, adjacent role
+- 3–4 : Some relevance but key dimension(s) fail (wrong stack, unpaid, weak role type)
+- 1–2 : Hard fail on [A] or [D] or [G] or [H], or aggregate/pipeline/wrong-role
+
+**Market calibration (July 2026)**: Go/backend fresher roles in India are rare.
+A TypeScript/Node.js backend intern with India/Remote + 0-exp signals should score 7–8.
+
+Mandatory score thresholds from STEP 1 apply BEFORE final score assignment.
+
+### STEP 3 — OUTPUT (JSON only, no markdown)
+
+Return ONLY a valid JSON object:
 {{
   "score": <integer 1-10>,
-  "expired": <true if application is closed/deadline passed, false otherwise>,
-  "reason": "<1-2 sentences explaining the score — MANDATORY for ALL scores>",
-  "highlights": ["<reason 1>", "<reason 2>", "<reason 3> — IF score>=6, else []"],
-  "red_flags": ["<issue if any> — IF score>=6, else []"],
-  "golang_match": <true/false>,
-  "fintech_match": <true/false>,
-  "apply_urgency": "<high/medium/low/expired>",
+  "expired": <true if [H] triggered, false otherwise>,
+  "reason": "<1-3 sentences: key dimension results + primary factor for the score — MANDATORY for ALL scores>",
+  "highlights": ["<positive signal 1>", "<positive signal 2>", "<positive signal 3> — required if score>=6, else []"],
+  "red_flags": ["<concern 1>", "<concern 2> — required if score>=6, else []"],
+  "golang_match": <true if Go/Golang mentioned in JD, false otherwise>,
+  "fintech_match": <true if fintech/crypto/payments company, false otherwise>,
+  "apply_urgency": "<high (score 8-10) / medium (score 6-7) / low (score 1-5) / expired>",
   "estimated_experience_required": "<0 / 0-1 / 1-2 / unknown>"
 }}"""
 
 
 def score_job(job: dict, profile: dict) -> dict:
-    """Score a single job with Google Gemini 2.5 Flash."""
+    """Score a single job with Google Gemini (gemini-3.1-flash-lite)."""
 
     # ── Lazy description fetch (freshers_blogs) ──────────────────────────────────
     # freshers_blogs sources return empty/partial descriptions intentionally
@@ -381,10 +484,20 @@ def score_job(job: dict, profile: dict) -> dict:
             config=types.GenerateContentConfig(
                 system_instruction=_SYSTEM_PROMPT,
                 temperature=0.1,        # Low temperature for consistent scoring
-                max_output_tokens=1024, # Enough for full JSON with reasons.
-                                        # gemini-2.0-flash is NOT a thinking model
-                                        # so all 1024 tokens go to the actual response,
-                                        # no thinking budget needed.
+                max_output_tokens=1536, # Increased from 1024 — richer rubric produces
+                                        # longer reasons; 1536 gives headroom for
+                                        # dimension analysis + highlights + red_flags.
+                thinking_config=types.ThinkingConfig(
+                    thinking_budget=256,  # Conservative thinking budget (256 tokens).
+                    # The model reasons internally before producing JSON:
+                    #   "Role type? Backend ✓. Seniority? Intern ✓. Stack? Go +3..."
+                    # This prevents pattern-matching to one signal and missing
+                    # disqualifiers. Thinking tokens are hidden from response.text.
+                    # Budget=256 is a cap — typical usage is ~150-200 tokens.
+                    # If TPD limits are hit, reduce to 128 or set to 0 to disable.
+                    # JSON mode is SAFE: flash-lite isolates thinking from output
+                    # (unlike gemini-2.5-flash which contaminated JSON with CoT).
+                ),
                 response_mime_type="application/json",
             ),
         )
