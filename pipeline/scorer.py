@@ -62,7 +62,7 @@ _last_call_ts = 0.0        # module-level timestamp tracker
 #   Run duration for 89 jobs           : ~7.4 minutes
 # ─────────────────────────────────────────────────────────────────
 TOKEN_BUDGET_PER_RUN  = 200_000  # 80% of (500K TPD ÷ 2 runs/day) — per-run ceiling
-SYSTEM_PROMPT_TOKENS  = 800      # observed: system msg + few-shot + rules overhead
+SYSTEM_PROMPT_TOKENS  = 1200     # updated: 5 few-shot examples now in system prompt (+400 over old 800)
 RESPONSE_TOKENS       = 400      # observed average (actual responses ~300-400 tokens)
 CHARS_PER_TOKEN       = 4        # standard approximation (1 token ≈ 4 chars)
 
@@ -93,40 +93,74 @@ def load_profile(path="profile.yaml") -> dict:
 # FEW-SHOT CALIBRATION EXAMPLES
 #
 # Purpose: anchor the 1–10 scale so Llama-4-Scout doesn't drift.
-# Without anchors, the model tends to compress scores toward the
-# middle (4–7) or inflate them unpredictably run-to-run.
+# Without anchors, the model compresses all scores to 3–4 when
+# Go-native roles are rare (as in India July 2026 market).
 #
-# Two calibration examples are injected into the SYSTEM prompt
+# Five calibration examples are injected into the SYSTEM prompt
 # (not the user message) so they are cached by Groq and don't
 # count against per-request token budget for each job scored.
 #
-# Chosen to bracket the useful range:
-#   9 = nearly perfect match for Rohit
-#   3 = looks like a tech job but is actually a bad fit
+# Bracket the ENTIRE useful decision range:
+#   9 = strong backend match (not exclusively Go — TypeScript/Node.js counts)
+#   7 = good non-Go backend that absolutely should surface
+#   6 = solid adjacent role (Python/Node.js, remote-first, fresh-batch)
+#   5 = borderline — worth DB but not urgent
+#   3 = looks tech but is actually a reject
+#
+# CRITICAL: The score-9 example must NOT be over-specific to Go stack.
+# Over-anchoring on Go means TypeScript/Node.js backend roles (which are
+# the MAJORITY of available fresher roles) all land at 5–6 instead of 7–8.
 # ─────────────────────────────────────────────────────────────────
 _FEW_SHOT_EXAMPLES = """
 ## CALIBRATION EXAMPLES (use these to anchor your scoring scale)
 
 ### Example A — Score 9 (near-perfect match)
-Job: "Backend Intern – Go/Golang" at Koinbase (crypto exchange), Bangalore/Remote
-Description excerpt: "We're building a high-throughput order matching engine in Go.
-  You'll work on our gRPC microservices, PostgreSQL schemas, and Redis caching layer.
-  0–1 years experience. Stipend: ₹25,000/month. Apply before July 2026."
+Job: "Backend Engineering Intern" at a fintech startup (India/Remote)
+Description excerpt: "Build REST APIs and microservices. Stack: Go or TypeScript.
+  0–1 years experience. Stipend ₹20,000–30,000/month. 2026/2027 batch welcome."
 → Correct score: 9
-→ Reasoning: Golang + gRPC + PostgreSQL + Redis = exact stack match. Crypto/fintech
-  domain matches Zaraba project signal. Remote/Bangalore is acceptable. Fresher role.
-  Stipend above minimum. Only reason it isn't 10: no mention of equity/ESOPs and
-  company is less well-known.
+→ Reasoning: Backend intern role in a relevant domain (fintech), remote/India
+  acceptable, fresher-friendly, uses candidate's primary stack. Stipend meets
+  minimum. This is the target archetype — score confidently at 9.
 → apply_urgency: "high"
 
-### Example B — Score 3 (tech role, poor fit)
+### Example B — Score 7 (good non-Go backend role)
+Job: "Backend Intern (Node.js/TypeScript)" at an Indian SaaS startup, Bangalore/Remote
+Description excerpt: "0–6 months experience required. Build REST APIs using
+  Express/Node.js. TypeScript preferred. Stipend ₹20,000–30,000/month."
+→ Correct score: 7
+→ Reasoning: TypeScript/Node.js backend is in the candidate's strong stack.
+  India location and fresher-friendly. Not Go or fintech, so not a 9, but
+  this is a genuinely good match — must not be scored below 7.
+→ apply_urgency: "medium"
+
+### Example C — Score 6 (solid adjacent, should surface in digest)
+Job: "Graduate Software Engineer" at a remote-first company (Python/Kafka)
+Description excerpt: "Any location accepted. 2026/2027 batch welcome. Backend
+  focused, Python, REST APIs, message queues. 0 experience required."
+→ Correct score: 6
+→ Reasoning: Remote-first and fresh-batch signals are strong positives.
+  Python is not the candidate's primary stack but the role is backend-adjacent
+  and entry-level. Worth a digest notification — do not score lower than 6.
+→ apply_urgency: "medium"
+
+### Example D — Score 5 (borderline — save but don't notify)
+Job: "Full Stack Developer Intern (React + Node.js)" at Indian startup, Bangalore
+Description excerpt: "No specific experience required. Build UI components and
+  REST APIs. Bangalore office only."
+→ Correct score: 5
+→ Reasoning: Full-stack role with frontend-heavy framing. Backend component
+  exists but React is the primary focus. On-site Bangalore is acceptable.
+  Save to DB but no urgent or digest notification needed.
+→ apply_urgency: "low"
+
+### Example E — Score 3 (tech role, poor fit)
 Job: "Junior DevOps Engineer" at TechCorp, Pune (on-site)
-Description excerpt: "2+ years with AWS, Terraform, Jenkins CI/CD pipelines required.
-  Must have experience managing production Kubernetes clusters."
+Description excerpt: "2+ years with AWS, Terraform, Jenkins CI/CD required.
+  Must manage production Kubernetes clusters."
 → Correct score: 3
-→ Reasoning: DevOps is on the role blacklist. Requires 2+ years experience (hard
-  reject signal). On-site Pune is borderline acceptable but the experience requirement
-  alone makes this unfit. Terraform/Jenkins are not in the candidate's stack.
+→ Reasoning: DevOps is on the role blacklist. Requires 2+ years (hard reject
+  signal). Terraform/Jenkins not in candidate's stack.
 → apply_urgency: "low"
 """
 
@@ -311,9 +345,19 @@ def score_job(job: dict, profile: dict) -> dict:
                     "role": "system",
                     # Few-shot examples live in the system prompt so they anchor
                     # the score scale without burning per-job user-message tokens.
+                    # Market context note: India Go/backend fresher roles are
+                    # extremely rare (July 2026, post-peak-hiring). Score relative
+                    # to market availability — a TypeScript/Node.js backend intern
+                    # with remote/India + fresher signals is a strong match (7+),
+                    # not a mediocre one. Do NOT anchor solely on Go stack.
                     "content": (
-                        "You are a precise job relevance scorer. "
-                        "Always respond with valid JSON only, no markdown.\n"
+                        "You are a precise job relevance scorer for an India-based "
+                        "fresher (graduating May 2027) targeting backend engineering "
+                        "roles. It is July 2026 — India Go/backend fresher roles are "
+                        "extremely rare. Score relative to market reality: a "
+                        "TypeScript, Node.js, or Python backend intern role with "
+                        "strong India/remote + 0-exp signals should score 6–8, "
+                        "not 3–4. Always respond with valid JSON only, no markdown.\n"
                         + _FEW_SHOT_EXAMPLES
                     ),
                 },

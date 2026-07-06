@@ -4,6 +4,19 @@
 
 ---
 
+## [2026-07-06] Fix few-shot calibration — 5-point scale anchoring + India market context
+**What**: Rewrote the scorer's few-shot examples and system prompt to fix systematic under-scoring:
+1. Expanded calibration from 2 examples (9+3) to 5 examples (9, 7, 6, 5, 3) — anchors the full useful decision range
+2. Replaced the over-specific Go/gRPC/PostgreSQL/Redis/Koinbase score-9 example with a generic "backend intern at fintech" archetype that accepts Go OR TypeScript — prevents the model from penalising non-Go backend roles
+3. Added score-7 (Node.js/TypeScript SaaS intern), score-6 (Python remote-first, 2026 batch), score-5 (full-stack frontend-heavy, Bangalore on-site) examples
+4. Injected India market context into the system prompt: July 2026 post-peak-hiring, Go fresher roles are rare → TypeScript/Node.js backend intern with remote+0-exp signals should score 6–8, not 3–4
+5. Updated `SYSTEM_PROMPT_TOKENS` from 800 → 1200 to reflect the larger system prompt (prevents token budget underestimation, ~89→82 max jobs/run)
+**Why**: v4 run sourced 773 jobs, scored 89, but ALL scored ≤4/10 — zero urgents or digests. Root cause was Go-anchoring + missing mid-range calibration making the model treat "best available" TypeScript/Node.js backend roles as bad matches.
+**Files**: `pipeline/scorer.py`
+**Status**: Complete
+
+---
+
 ## [2026-07-01] Comprehensive test suite — 461 tests, all sources covered
 **What**: Built a full test suite from scratch covering all pipeline components and every data source:
 - 17 test files, 461 tests, 0 failures — runs in ~2 minutes
