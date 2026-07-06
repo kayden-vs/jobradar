@@ -89,9 +89,9 @@ Urgent alerts fire the moment a high-scoring job is found. Every run ends with a
                          │ ranked, best-first
                          ▼
 ┌─────────────────────────────────────────────────┐
-│     AI Scorer — Groq llama-4-scout-17b          │
-│  Token-budget guard · 5s throttle (28.8K TPM)   │
-│  ~89 jobs/run · few-shot calibrated 1–10 scale  │
+│     AI Scorer — Gemini 2.5 Flash                │
+│  Native JSON mode · 4.5s throttle (~13 RPM)    │
+│  130 jobs/run · few-shot calibrated 1–10 scale │
 └────────────────────────┬────────────────────────┘
                          │
          ┌───────────────┴───────────────┐
@@ -186,20 +186,22 @@ All numeric weights are configurable in `profile.yaml → ranker_weights:` witho
 
 ### 🤖 AI Scorer
 
-**Model**: `meta-llama/llama-4-scout-17b-16e-instruct` via Groq free tier (MoE architecture — better quality than 8B, close to 70B).
+**Model**: `gemini-2.5-flash` via Google Gemini free tier (Google AI Studio).
 
-**Two-layer rate system:**
+**Rate limiting:**
 
 | Layer | Mechanism | Value |
 |---|---|---|
-| Per-minute (TPM) | `REQ_INTERVAL` throttle | 5.0s gap → 12 req/min → 28,800 TPM (safely under 30K limit) |
-| Per-run daily budget | `TOKEN_BUDGET_PER_RUN` | 200,000 tokens (80% of 500K TPD ÷ 2 runs/day) |
+| Per-minute (RPM) | `REQ_INTERVAL` throttle | 4.5s gap → ~13.3 req/min (under ~15 RPM limit) |
+| TPM | Effectively none | Gemini free tier: ~1,000,000 TPM — no bottleneck |
+| Daily ceiling | `max_ai_jobs_per_run` | 130 jobs max (all scored — no token budget gate needed) |
 
 **Key features:**
-- **Few-shot calibration** — two fixed examples (score 9 and score 3) anchor the scale so the model doesn't drift across runs
-- **Token-saving rules** — jobs scoring < 6 return empty `reason`, `highlights`, `red_flags` — cuts response tokens by ~90% for low-relevance jobs
-- **Pre-Groq expiry scan** — scans the full description for closure signals before making any Groq call
-- **`apply_angle` field** — for score ≥ 8 only: one actionable sentence about what to emphasise in the cover note
+- **5-point few-shot calibration** — score anchors at 9, 7, 6, 5, and 3 anchor the full useful decision range
+- **Mandatory score reasons** — ALL scores (including <6) include a 1-2 sentence reason for debugging
+- **Native JSON mode** via `response_mime_type="application/json"` — guaranteed JSON, no markdown fence stripping
+- **Pre-Gemini expiry scan** — scans the full description for closure signals before making any AI call
+- **6,000 char JD limit** — double the old Groq limit (3,000 chars); better context for long JDs
 
 **Score buckets:**
 
@@ -255,7 +257,7 @@ jobradar/
 │   ├── dedup.py               # Run-level + persistent SQLite dual-hash deduplication
 │   ├── prefilter.py           # Multi-layer rule-based hard filters (zero AI cost)
 │   ├── ranker.py              # Heuristic relevance ranker — sorts jobs before AI scoring
-│   └── scorer.py              # Groq AI scorer — token-budgeted, throttled, few-shot calibrated
+│   └── scorer.py              # Gemini AI scorer — native JSON mode, few-shot calibrated, no token budget gate
 │
 ├── notify/
 │   └── telegram_bot.py        # Urgent push alerts + session digest card
@@ -294,7 +296,7 @@ pip install -r requirements.txt
 ### 2. Configure `.env`
 
 ```env
-GROQ_API_KEY=gsk_xxxxxxxxxxxxxxxxxxxx
+GEMINI_API_KEY=AIzaSy_xxxxxxxxxxxxxxxxxxxxxxxx
 SERPER_API_KEY=xxxxxxxxxxxxxxxxxxxxxxxx
 TELEGRAM_BOT_TOKEN=1234567890:AAxxxxxxxxxxxxxxxx
 TELEGRAM_CHAT_ID=987654321
@@ -374,22 +376,22 @@ Register-ScheduledTask -TaskName "JobRadar" -Action $action -Trigger $trigger -R
 | **After deduplication** | ~600–800 new | < 1 sec | Fast dual-hash SQLite lookups |
 | **After pre-filter** | ~100–150 eligible | < 1 sec | Rule-based, zero AI cost |
 | **After heuristic ranking** | same count, sorted | < 1 sec | Pure Python, no network |
-| **After AI scorer** | ~80–100 scored | ~7–8 min | Token budget: ~89 jobs max/run at 5.0s intervals |
+| **After AI scorer** | up to 130 scored | ~10 min | 4.5s/request, 130 job cap, no token budget gate |
 | **Alerts delivered** | 2–6 urgent | < 1 sec | Telegram push for score ≥ 8 |
-| **Total pipeline** | | **~17–20 min** | |
+| **Total pipeline** | | **~20–22 min** | |
 
 ### Free-Tier API Usage
 
 | API | Usage per run | Free tier | Headroom |
 |:---|:---|:---|:---|
-| **Groq (llama-4-scout)** | ~200K tokens | 500K tokens/day | 2 runs/day at full budget |
+| **Gemini (2.5-flash)** | ~455K tokens | ~1.5M tokens/day | 3+ runs/day with room to spare |
 | **Serper.dev** | 25 queries | 2,500 queries/month | 1,500/month = 60% of free tier |
 | **Telegram Bot** | ~10–15 messages | Unlimited | Free |
 
-**Groq rate limits** (llama-4-scout free tier):
-- **TPM**: 30,000 tokens/min → `REQ_INTERVAL = 5.0s` gives 28,800 TPM (4% headroom)
-- **TPD**: 500,000 tokens/day → `TOKEN_BUDGET_PER_RUN = 200K` (2 runs × 200K = 400K, 80% of TPD)
-- **RPD**: 1,000 requests/day → 89 req/run × 2 runs = 178 RPD (well within limit)
+**Gemini rate limits** (2.5-flash free tier, approximate — project-level, verify in AI Studio):
+- **RPM**: ~10–15 requests/min → `REQ_INTERVAL = 4.5s` gives ~13.3 RPM (safe headroom)
+- **TPM**: ~1,000,000 tokens/min → no TPM bottleneck (13 req/min × 3,500 tok = 45,500 TPM ≪ 1M limit)
+- **TPD**: ~1,500,000 tokens/day → 130 jobs × 3,500 tok = 455K tokens/run, well within limit
 
 ---
 

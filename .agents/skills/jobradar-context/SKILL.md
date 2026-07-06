@@ -7,12 +7,12 @@ description: Complete context for the JobRadar automated job discovery pipeline 
 
 ## What is JobRadar?
 
-JobRadar is a **fully automated job discovery pipeline** built in Python. It aggregates jobs from 16 sources (ATS APIs, job boards, RSS feeds, Google dorking), deduplicates across runs, filters with zero-cost heuristic rules, ranks by relevance, scores the top candidates with AI (Groq/Llama-4), and delivers urgent matches via Telegram. Built for freshers/interns but fully configurable for any role via `profile.yaml`.
+JobRadar is a **fully automated job discovery pipeline** built in Python. It aggregates jobs from 16 sources (ATS APIs, job boards, RSS feeds, Google dorking), deduplicates across runs, filters with zero-cost heuristic rules, ranks by relevance, scores the top candidates with AI (Google Gemini), and delivers urgent matches via Telegram. Built for freshers/interns but fully configurable for any role via `profile.yaml`.
 
 ## Tech Stack
 
 - **Language**: Python 3.11+
-- **AI**: Groq free tier — `meta-llama/llama-4-scout-17b-16e-instruct`
+- **AI**: Google Gemini free tier — `gemini-2.5-flash` via `google-genai` SDK
 - **Database**: SQLite (via `storage/db.py`)
 - **Notifications**: Telegram Bot API (`python-telegram-bot>=21.0`)
 - **Config**: YAML (`profile.yaml` for user prefs, `companies.yaml` for ATS slugs)
@@ -27,7 +27,7 @@ jobradar/
 ├── main.py                  # Entry point — orchestrates full pipeline
 ├── profile.yaml             # User config (roles, skills, location, filters, weights)
 ├── companies.yaml           # ATS company slugs for 10 platforms
-├── .env                     # API keys (GROQ, SERPER, TELEGRAM)
+├── .env                     # API keys (GEMINI_API_KEY, GROQ_API_KEY, SERPER, TELEGRAM)
 ├── requirements.txt         # Python dependencies
 ├── run.sh                   # EC2 boot script (git pull → pip install → pipeline → followup → shutdown)
 │
@@ -54,7 +54,7 @@ jobradar/
 │   ├── dedup.py             # Run-level (in-memory) + persistent (SQLite) dual-hash dedup
 │   ├── prefilter.py         # Multi-layer rule-based hard filters (age, experience, location, blacklists, ATS caps)
 │   ├── ranker.py            # 6-layer heuristic relevance ranker (profile-driven, zero AI cost)
-│   └── scorer.py            # Groq AI scorer — token-budgeted, throttled, few-shot calibrated
+│   └── scorer.py            # Gemini AI scorer — fully scored (no token budget gate), few-shot calibrated, native JSON mode
 │
 ├── notify/                  # Notification layer
 │   ├── telegram_bot.py      # Urgent push alerts + session divider card
@@ -86,28 +86,30 @@ Rule-Based Pre-Filter (drops ~90–95%) → ~50–150 eligible
          ↓
 6-Layer Heuristic Ranker (sorts best-first) → same count, reordered
          ↓
-AI Scorer (Groq, ~89 jobs/run max) → score 1–10
+AI Scorer (Gemini 2.5 Flash, up to 130 jobs/run) → score 1–10
          ↓
 Score ≥8 → Telegram push  |  Score 6–7 → Session digest  |  Score <6 → DB only
 ```
 
-## Current State (as of June 2026)
+## Current State (as of July 2026)
 
 **Working sources (12)**: ATS (10 platforms), Workday, Naukri, YC, Internshala, freshers_blogs, Serper, HN, hiring.cafe, Jobicy, RemoteOK
 **Disabled sources (5)**: Cutshort (broken API), Instahyre (API 404), Wellfound (bot blocking), Reddit (wrong content), Hirist (untested/TODO)
 **Deployment**: EC2 t2.micro, auto-starts via EventBridge schedule, runs pipeline, then auto-shuts down
-**Recent focus**: Ranker v3 (seniority penalty, title dedup, cap alignment), weekly summary, application tracker bot
+**Recent focus**: Gemini migration (branch: feat/gemini-scorer — not yet merged), scorer calibration fix, ranker v3
 
 ## Key Numbers
 
 | Metric | Value |
 |---|---|
-| Groq model | llama-4-scout-17b-16e (MoE, free tier) |
-| Token budget/run | 200K (of 500K TPD ÷ 2 runs/day) |
-| Request interval | 5.0s (12 req/min → 28,800 TPM, under 30K limit) |
-| Max AI jobs/run | ~103 observed (hard cap: 130) |
+| Gemini model | gemini-2.5-flash (free tier via AI Studio) |
+| Token budget/run | None (Gemini ~1.5M TPD — no per-run ceiling) |
+| Request interval | 4.5s (~13.3 req/min, under Gemini's ~15 RPM) |
+| Max AI jobs/run | 130 (all scored — no budget-based skipping) |
+| JD description limit | 6,000 chars (was 3,000 with Groq) |
 | Serper budget | 25 queries/run (of 2,500/month free) |
-| Pipeline duration | ~17–20 minutes total |
+| Pipeline duration | ~20–22 minutes total |
+| GEMINI_API_KEY | Required in `.env` |
 
 ## Deep-Dive References
 

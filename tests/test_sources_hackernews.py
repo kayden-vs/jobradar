@@ -6,7 +6,7 @@ Covers (all logic that doesn't require real API calls):
   - get_current_thread_id: known month key lookup
   - HN_THREAD_IDS: dict integrity (all values are ints)
   - fetch_hn_comments: mocked HTTP responses
-  - parse_comments_with_ai: mocked Groq client (no real API spend)
+  - parse_comments_with_ai: mocked Gemini client (no real API spend)
 
 Note: fetch_hn_hiring() is integration-level and tested with mocks only.
 """
@@ -183,23 +183,22 @@ class TestFetchHnComments:
 
 
 # ─────────────────────────────────────────────────────────────────
-# parse_comments_with_ai — mocked Groq client
+# parse_comments_with_ai — mocked Gemini client
 # ─────────────────────────────────────────────────────────────────
 
 class TestParseCommentsWithAi:
-    def _make_groq_response(self, content: str):
-        choice = MagicMock()
-        choice.message.content = content
+    def _make_gemini_response(self, content: str):
+        """Create a mock Gemini response with a .text attribute."""
         response = MagicMock()
-        response.choices = [choice]
+        response.text = content
         return response
 
     @patch("sources.hackernews._throttle")
-    @patch("sources.hackernews._groq_client")
+    @patch("sources.hackernews._gemini_client")
     def test_valid_json_extracted(self, mock_client_fn, mock_throttle):
         client = MagicMock()
         mock_client_fn.return_value = client
-        client.chat.completions.create.return_value = self._make_groq_response(
+        client.models.generate_content.return_value = self._make_gemini_response(
             '[{"title": "Go Backend Engineer", "company": "FinCorp", "location": "Remote", '
             '"description": "Build APIs", "url": "https://fincorp.com/jobs/1", '
             '"salary": "", "requires_experience": 0, "tech_stack": "Go, gRPC"}]'
@@ -210,20 +209,20 @@ class TestParseCommentsWithAi:
         assert jobs[0]["title"] == "Go Backend Engineer"
 
     @patch("sources.hackernews._throttle")
-    @patch("sources.hackernews._groq_client")
+    @patch("sources.hackernews._gemini_client")
     def test_empty_array_response(self, mock_client_fn, mock_throttle):
         client = MagicMock()
         mock_client_fn.return_value = client
-        client.chat.completions.create.return_value = self._make_groq_response("[]")
+        client.models.generate_content.return_value = self._make_gemini_response("[]")
         jobs = parse_comments_with_ai(["This is a general discussion post."])
         assert jobs == []
 
     @patch("sources.hackernews._throttle")
-    @patch("sources.hackernews._groq_client")
+    @patch("sources.hackernews._gemini_client")
     def test_markdown_fenced_json_handled(self, mock_client_fn, mock_throttle):
         client = MagicMock()
         mock_client_fn.return_value = client
-        client.chat.completions.create.return_value = self._make_groq_response(
+        client.models.generate_content.return_value = self._make_gemini_response(
             '```json\n[{"title": "Backend Dev", "company": "Corp", "location": "Remote", '
             '"description": "desc", "url": "https://corp.com/job", '
             '"salary": "", "requires_experience": 0, "tech_stack": "Go"}]\n```'
@@ -232,24 +231,24 @@ class TestParseCommentsWithAi:
         assert len(jobs) == 1
 
     @patch("sources.hackernews._throttle")
-    @patch("sources.hackernews._groq_client")
+    @patch("sources.hackernews._gemini_client")
     def test_invalid_json_handled_gracefully(self, mock_client_fn, mock_throttle):
         client = MagicMock()
         mock_client_fn.return_value = client
-        client.chat.completions.create.return_value = self._make_groq_response(
+        client.models.generate_content.return_value = self._make_gemini_response(
             "I'm sorry, I cannot extract jobs from this."
         )
         jobs = parse_comments_with_ai(["Some non-job text." + " x" * 30])
         assert jobs == []
 
     @patch("sources.hackernews._throttle")
-    @patch("sources.hackernews._groq_client")
+    @patch("sources.hackernews._gemini_client")
     def test_invalid_jobs_filtered_by_is_valid_job(self, mock_client_fn, mock_throttle):
         """Jobs failing _is_valid_job should be filtered out before returning."""
         client = MagicMock()
         mock_client_fn.return_value = client
         # Return a job with no company and no url → _is_valid_job returns False
-        client.chat.completions.create.return_value = self._make_groq_response(
+        client.models.generate_content.return_value = self._make_gemini_response(
             '[{"title": "Backend Dev", "company": "", "location": "Remote", '
             '"description": "desc", "url": "", "salary": "", "requires_experience": 0, "tech_stack": ""}]'
         )
@@ -257,16 +256,16 @@ class TestParseCommentsWithAi:
         assert jobs == []
 
     @patch("sources.hackernews._throttle")
-    @patch("sources.hackernews._groq_client")
+    @patch("sources.hackernews._gemini_client")
     def test_api_exception_returns_empty(self, mock_client_fn, mock_throttle):
         client = MagicMock()
         mock_client_fn.return_value = client
-        client.chat.completions.create.side_effect = Exception("API error")
+        client.models.generate_content.side_effect = Exception("API error")
         jobs = parse_comments_with_ai(["Some text." + " x" * 30])
         assert jobs == []
 
     @patch("sources.hackernews._throttle")
-    @patch("sources.hackernews._groq_client")
+    @patch("sources.hackernews._gemini_client")
     def test_empty_comments_returns_empty(self, mock_client_fn, mock_throttle):
         jobs = parse_comments_with_ai([])
         assert jobs == []

@@ -1,7 +1,7 @@
 scrapling[fetchers]
 requests
 feedparser
-groq
+google-genai
 python-telegram-bot>=21.0
 pyyaml
 python-dotenv

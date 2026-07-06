@@ -4,6 +4,23 @@
 
 ---
 
+## [2026-07-06] Migrate AI scorer from Groq → Google Gemini 2.5 Flash (branch: feat/gemini-scorer)
+**What**:
+1. Replaced Groq `llama-4-scout-17b-16e-instruct` with `gemini-2.5-flash` in `pipeline/scorer.py` (model discontinued by Groq)
+2. Replaced `groq` Python SDK with `google-genai` SDK across `requirements.txt`, `pipeline/scorer.py`, `sources/hackernews.py`
+3. Removed per-run token budget ceiling (200K tokens) — Gemini TPD is ~1.5M/day vs Groq's 500K, so all 130 ranked jobs now get scored per run (27 were being skipped every run)
+4. Expanded JD description limit from 3,000 → 6,000 chars for better AI context
+5. Made score reasons mandatory for ALL scores (was empty for <6) — enables debugging
+6. Native JSON mode via `response_mime_type="application/json"` — eliminates markdown fence stripping
+7. Rate limit recalibrated: 4.5s/req (was 5.0s) — fits under Gemini's ~15 RPM with headroom
+8. Updated hackernews.py AI comment parser to Gemini, updated all hackernews tests
+9. Added ADR-012 to decisions.md, updated architecture.md scorer section
+**Why**: Groq discontinued `llama-4-scout-17b-16e-instruct`. All remaining Groq models have 6K–12K TPM limits (vs Scout's 30K) which would require 15–20s delays and ~34 min scoring phases. Gemini 2.5 Flash free tier offers ~1M TPM — no TPM constraint at all.
+**Files**: `pipeline/scorer.py`, `sources/hackernews.py`, `requirements.txt`, `profile.yaml`, `tests/test_sources_hackernews.py`, `references/architecture.md`, `references/decisions.md`, `references/changelog.md`
+**Status**: Branch `feat/gemini-scorer` — not yet merged. Needs `pip install google-genai` on EC2 and live test run before merge.
+
+---
+
 ## [2026-07-06] Fix few-shot calibration — 5-point scale anchoring + India market context
 **What**: Rewrote the scorer's few-shot examples and system prompt to fix systematic under-scoring:
 1. Expanded calibration from 2 examples (9+3) to 5 examples (9, 7, 6, 5, 3) — anchors the full useful decision range

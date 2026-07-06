@@ -1,6 +1,28 @@
 # JobRadar — Architecture Decision Records
 
-> Last updated: 2026-06-30
+> Last updated: 2026-07-06
+
+---
+
+## ADR-012: Migrate AI Scorer from Groq to Google Gemini 2.5 Flash
+
+**Date**: 2026-07-06
+**Decision**: Replace Groq (`meta-llama/llama-4-scout-17b-16e-instruct`) with Google Gemini (`gemini-2.5-flash`) as the AI scoring provider, and remove the per-run token budget ceiling.
+**Context**: Groq discontinued the `llama-4-scout-17b-16e-instruct` model. All remaining Groq free-tier models have significantly lower TPM limits (6K–12K vs Scout's 30K), which would require 15–20s delays per request and ~34 minute scoring phases.
+**Rationale**:
+- Gemini 2.5 Flash free tier: ~1M TPM / ~1.5M TPD — 33× more tokens per minute than Groq.
+- RPM bottleneck only (~15 RPM), handled by 4.5s inter-request interval.
+- Native JSON mode (`response_mime_type="application/json"`) eliminates markdown fence stripping.
+- Gemini's generous TPD means the old 200K per-run token budget ceiling is no longer needed. All 130 ranked jobs are now scored per run (previously 27 were skipped every run due to budget exhaustion).
+- Description truncation expanded from 3,000 → 6,000 chars — better context for long JDs.
+- Score reasons are now mandatory for ALL scores (including <6) — enables debugging without burning significant extra tokens.
+- The 130-job cap (`max_ai_jobs_per_run`) is retained rather than raising to 150+. The v4 analysis showed the ranker is working well (score spread=40). The problem was scorer calibration (fixed by few-shot examples), not insufficient coverage.
+- Also migrated `sources/hackernews.py` comment parser from Groq to Gemini (same model, same rate limiting).
+**SDK**: `google-genai` (pip install google-genai) — the official unified Python client.
+**Env var**: `GEMINI_API_KEY` (previously `GROQ_API_KEY` for scorer — the Groq key stays in `.env` but scorer no longer uses it).
+**Alternatives**: Groq qwen3-32b (same 500K TPD but only 6K TPM → 20s delay, 34 min/run). Groq llama-3.1-8b (poor quality). Gemini won on all dimensions.
+
+---
 
 Each entry documents a significant design decision: what was decided, why, and what alternatives were considered.
 

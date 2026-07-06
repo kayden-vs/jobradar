@@ -1,6 +1,6 @@
 # JobRadar — Architecture Reference
 
-> Last updated: 2026-06-30
+> Last updated: 2026-07-06
 
 ## Module Map & Key Functions
 
@@ -148,27 +148,35 @@ All weights configurable in `profile.yaml → ranker_weights:`.
 
 ---
 
-### `pipeline/scorer.py` — AI Scorer (Groq)
+### `pipeline/scorer.py` — AI Scorer (Gemini)
 
 | Key constant | Value |
 |---|---|
-| `MODEL` | `meta-llama/llama-4-scout-17b-16e-instruct` |
-| `REQ_INTERVAL` | 5.0s (12 req/min → 28,800 TPM) |
-| `TOKEN_BUDGET_PER_RUN` | 200,000 tokens |
-| `SYSTEM_PROMPT_TOKENS` | ~800 (observed) |
-| `RESPONSE_TOKENS` | ~400 (observed avg) |
+| `MODEL` | `gemini-2.5-flash` |
+| `REQ_INTERVAL` | 4.5s (~13.3 req/min, under Gemini's ~15 RPM) |
+| `SYSTEM_PROMPT_TOKENS` | ~1,400 (system prompt + 5 few-shot examples) |
+| `RESPONSE_TOKENS` | ~500 (full reasons always returned) |
+| `DESC_CHAR_LIMIT` | 6,000 chars (doubled from old Groq limit of 3,000) |
 | `CHARS_PER_TOKEN` | 4 |
+
+Rate limits (Gemini free tier, approximate):
+- TPM: ~1,000,000 — no TPM bottleneck at all
+- TPD: ~1,500,000 — no per-run token budget needed
+- RPM: ~10–15 — controlled via REQ_INTERVAL
+- RPD: ~1,500 — enough for 3+ runs/day at 130 jobs each
 
 | Function | Signature | Purpose |
 |---|---|---|
-| `score_all()` | `score_all(jobs: list[dict], profile: dict, db_path: str) -> tuple[list, list, list]` | Returns (urgent, digest, low) job lists. Calls ranker first, then scores in ranked order until budget exhausted. |
+| `score_all()` | `score_all(jobs: list[dict], profile: dict, db_path: str) -> tuple[list, list, list]` | Returns (urgent, digest, low) job lists. Calls ranker first, then scores ALL jobs up to max_ai_jobs_per_run (no token budget gate). |
 
 Features:
-- Few-shot calibration (score 9 + score 3 examples)
-- Token-saving: jobs scoring <6 return empty reason/highlights/red_flags
-- Pre-Groq expiry scan before each API call
-- `apply_angle` field for score ≥8 jobs
-- Lazy JD fetch for freshers_blogs and Naukri stub descriptions
+- **5-point few-shot calibration** (score 9, 7, 6, 5, 3 examples) anchors full decision range
+- **Native JSON mode** via `response_mime_type="application/json"` — no markdown fence stripping
+- **Mandatory score reasons** for ALL scores (including low scores) — fully debuggable
+- **Pre-Gemini expiry scan** before each API call (zero token cost)
+- **Lazy JD fetch** for freshers_blogs, Naukri, and Workday stub descriptions
+- **No token budget gate** — all ranked jobs scored up to max_ai_jobs_per_run cap
+- Uses `google-genai` SDK (`pip install google-genai`); needs `GEMINI_API_KEY` in `.env`
 
 ---
 

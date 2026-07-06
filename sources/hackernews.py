@@ -5,21 +5,22 @@ import os
 import re
 import time
 from datetime import datetime
-from groq import Groq
+from google import genai
+from google.genai import types
 
 logger = logging.getLogger(__name__)
 
-# Using the same high-TPM model as scorer.py to avoid rate limits
-GROQ_MODEL   = "meta-llama/llama-4-scout-17b-16e-instruct"
-REQ_INTERVAL = 5.0  # Increased to 5s to avoid Groq 429 (TPM limits)
+# Using Gemini 2.5 Flash — same model as scorer.py
+GEMINI_MODEL = "gemini-2.5-flash"
+REQ_INTERVAL = 4.5  # seconds between AI calls — stays under Gemini's ~15 RPM
 _last_call   = 0.0
 
 
-def _groq_client() -> Groq:
-    api_key = os.getenv("GROQ_API_KEY")
+def _gemini_client() -> genai.Client:
+    api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
-        raise RuntimeError("GROQ_API_KEY is not set in .env")
-    return Groq(api_key=api_key)
+        raise RuntimeError("GEMINI_API_KEY is not set in .env")
+    return genai.Client(api_key=api_key)
 
 
 def _throttle():
@@ -86,9 +87,9 @@ def get_current_thread_id() -> int | None:
 def fetch_hn_comments(thread_id: int, max_comments: int = 60) -> list[str]:
     """
     Fetch top-level comments from an HN thread.
-    Capped at max_comments to control Groq token usage:
-    60 comments × ~800 tokens/batch → ~4,800 tokens for HN parsing,
-    leaving the daily 100k budget for scoring.
+    Capped at max_comments to control AI token usage:
+    60 comments × ~800 tokens/batch → ~4,800 tokens for HN parsing.
+    Gemini's generous TPD (~1.5M/day) means this has negligible budget impact.
     """
     r = requests.get(f"{HN_API}/item/{thread_id}.json", timeout=10)
     thread = r.json()
@@ -143,15 +144,15 @@ def _is_valid_job(job: dict) -> bool:
 
 def parse_comments_with_ai(comments: list[str]) -> list[dict]:
     """
-    Send batches of HN comments to Groq (llama-3.3-70b-versatile) to extract
-    structured job data. Batches of 10 to manage token budget.
-    Throttled at 1 req per 3 sec to stay under 30 req/min.
+    Send batches of HN comments to Gemini (gemini-2.5-flash) to extract
+    structured job data. Batches of 5 to keep responses clean.
+    Throttled at 4.5s per request to stay under ~15 RPM.
     """
-    client = _groq_client()
+    client = _gemini_client()
     all_jobs = []
 
-    # Smaller batch size to prevent JSON truncation (Unterminated string errors)
-    # and to reduce tokens per request, preventing 429 TPM rate limits.
+    # Batch size of 5: prevents JSON truncation and keeps response tokens manageable.
+    # Gemini's native JSON mode ensures clean array output without markdown fences.
     batch_size = 5
     for i in range(0, len(comments), batch_size):
         batch    = comments[i:i + batch_size]
@@ -162,7 +163,6 @@ def parse_comments_with_ai(comments: list[str]) -> list[dict]:
         prompt = f"""Extract ALL job opportunities from these HackerNews 'Who is Hiring' comments.
 Each comment is separated by ---.
 Return ONLY a JSON array. If no jobs are found in any comment, return an empty array [].
-No markdown, no explanation, just the JSON.
 
 For each job extract:
 - title: job title
@@ -178,22 +178,20 @@ Comments:
 {combined[:4000]}"""
 
         try:
-            response = client.chat.completions.create(
-                model=GROQ_MODEL,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You extract job postings from text. Always respond with a valid JSON array only.",
-                    },
-                    {"role": "user", "content": prompt},
-                ],
-                temperature=0.1,
-                max_tokens=2048,
+            response = client.models.generate_content(
+                model=GEMINI_MODEL,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    system_instruction="You extract job postings from text. Always respond with a valid JSON array only.",
+                    temperature=0.1,
+                    max_output_tokens=2048,
+                    response_mime_type="application/json",
+                ),
             )
 
-            text = response.choices[0].message.content.strip()
+            text = response.text.strip()
 
-            # Strip markdown fences if model ignores instructions
+            # Safety: strip markdown fences if present despite JSON mode
             if text.startswith("```"):
                 text = text.split("```")[1]
                 if text.startswith("json"):
