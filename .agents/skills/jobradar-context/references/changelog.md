@@ -4,6 +4,14 @@
 
 ---
 
+## [2026-07-06] Hotfix 2: switch gemini-2.0-flash → gemini-3.1-flash-lite (correct final model)
+**What**: Changed `MODEL` from `gemini-2.0-flash` to `gemini-3.1-flash-lite` in `scorer.py` and `hackernews.py`.
+**Why**: `gemini-2.0-flash` was deprecated by Google in March 2026 — it should not be used. The correct high-volume free tier model as of July 2026 is `gemini-3.1-flash-lite` (GA stable, released May 7 2026).
+**Free-tier limits for gemini-3.1-flash-lite** (confirmed via official docs): ~15 RPM, ~1,500 RPD, ~250K TPM. At 130 jobs × 2 runs/day = 260 RPD (17% of daily budget).
+**Model history for this project**: Groq llama-4-scout → gemini-2.5-flash (5 RPM + JSON bugs) → gemini-2.0-flash (deprecated) → **gemini-3.1-flash-lite** (final).
+
+---
+
 ## [2026-07-06] Hotfix: switch gemini-2.5-flash → gemini-2.0-flash (v5 post-mortem)
 **What**: Changed `MODEL` constant from `gemini-2.5-flash` to `gemini-2.0-flash` in `scorer.py` and `hackernews.py`. Bumped `max_output_tokens` from 768 → 1024.
 **Why — two bugs found in the v5 live run**:

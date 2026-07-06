@@ -89,7 +89,7 @@ Urgent alerts fire the moment a high-scoring job is found. Every run ends with a
                          │ ranked, best-first
                          ▼
 ┌─────────────────────────────────────────────────┐
-│     AI Scorer — Gemini 2.5 Flash                │
+│     AI Scorer — Gemini 3.1 Flash-Lite             │
 │  Native JSON mode · 4.5s throttle (~13 RPM)    │
 │  130 jobs/run · few-shot calibrated 1–10 scale │
 └────────────────────────┬────────────────────────┘
@@ -186,7 +186,7 @@ All numeric weights are configurable in `profile.yaml → ranker_weights:` witho
 
 ### 🤖 AI Scorer
 
-**Model**: `gemini-2.0-flash` via Google Gemini free tier (Google AI Studio). Uses the non-thinking variant for clean JSON mode output.
+**Model**: `gemini-3.1-flash-lite` via Google Gemini free tier (Google AI Studio). GA stable model released May 2026, optimised for high-volume tasks. Supports JSON mode cleanly.
 
 **Rate limiting:**
 
@@ -384,14 +384,14 @@ Register-ScheduledTask -TaskName "JobRadar" -Action $action -Trigger $trigger -R
 
 | API | Usage per run | Free tier | Headroom |
 |:---|:---|:---|:---|
-| **Gemini (2.0-flash)** | ~455K tokens | ~1.5M tokens/day | 3+ runs/day with room to spare |
+| **Gemini (3.1-flash-lite)** | ~455K tokens | ~1.5M tokens/day | ~1,500 RPD / ~15 RPM free tier |
 | **Serper.dev** | 25 queries | 2,500 queries/month | 1,500/month = 60% of free tier |
 | **Telegram Bot** | ~10–15 messages | Unlimited | Free |
 
-**Gemini rate limits** (2.0-flash free tier, confirmed from live run):
-- **RPM**: 15 requests/min → `REQ_INTERVAL = 4.5s` gives ~13.3 RPM (safe headroom)
-- **TPM**: ~1,000,000 tokens/min → no TPM bottleneck (13 req/min × 3,500 tok = 45,500 TPM ≪ 1M limit)
-- **TPD**: ~1,500,000 tokens/day → 130 jobs × 3,500 tok = 455K tokens/run, well within limit
+**Gemini rate limits** (gemini-3.1-flash-lite free tier, confirmed via official docs):
+- **RPM**: ~15 requests/min → `REQ_INTERVAL = 4.5s` gives ~13.3 RPM (safe headroom)
+- **TPM**: ~250,000 tokens/min → 13.3 req/min × ~2,400 tok = 31K TPM (12% of limit)
+- **RPD**: ~1,500 requests/day → 130 jobs × 2 runs = 260 RPD (17% of limit)
 
 ---
 

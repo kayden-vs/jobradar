@@ -12,7 +12,7 @@ JobRadar is a **fully automated job discovery pipeline** built in Python. It agg
 ## Tech Stack
 
 - **Language**: Python 3.11+
-- **AI**: Google Gemini free tier — `gemini-2.0-flash` via `google-genai` SDK
+- **AI**: Google Gemini free tier — `gemini-3.1-flash-lite` via `google-genai` SDK
 - **Database**: SQLite (via `storage/db.py`)
 - **Notifications**: Telegram Bot API (`python-telegram-bot>=21.0`)
 - **Config**: YAML (`profile.yaml` for user prefs, `companies.yaml` for ATS slugs)
@@ -102,9 +102,9 @@ Score ≥8 → Telegram push  |  Score 6–7 → Session digest  |  Score <6 →
 
 | Metric | Value |
 |---|---|
-| Gemini model | gemini-2.0-flash (free tier via AI Studio, 15 RPM confirmed) |
+| Gemini model | gemini-3.1-flash-lite (GA, May 2026, 15 RPM / ~1,500 RPD) |
 | Token budget/run | None (Gemini ~1.5M TPD — no per-run ceiling) |
-| Request interval | 4.5s (~13.3 req/min, under Gemini's ~15 RPM) |
+| Request interval | 4.5s (~13.3 req/min, under ~15 RPM, well under ~250K TPM) |
 | Max AI jobs/run | 130 (all scored — no budget-based skipping) |
 | JD description limit | 6,000 chars (was 3,000 with Groq) |
 | Serper budget | 25 queries/run (of 2,500/month free) |

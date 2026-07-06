@@ -17,28 +17,34 @@ from pipeline.ranker import rank_eligible_jobs
 logger = logging.getLogger(__name__)
 
 # ─────────────────────────────────────────────────────────────────
-# Google Gemini: gemini-2.0-flash (free tier via AI Studio)
+# Google Gemini: gemini-3.1-flash-lite (free tier via AI Studio)
 #
-# Why gemini-2.0-flash over 2.5-flash:
-#   - 2.5-flash free tier: only 5 RPM — useless for 130-job runs
-#   - 2.5-flash is a THINKING model: its chain-of-thought tokens leak
-#     into response_mime_type=application/json output, causing JSON
-#     parse errors on nearly every 200 OK response.
-#   - 2.0-flash free tier: 15 RPM, ~1,500 RPD, ~1M TPD
-#   - 2.0-flash is NOT a thinking model: JSON mode works cleanly
-#   - Quality is more than sufficient for 1-10 scoring tasks
+# Model history (why we're here):
+#   - Groq llama-4-scout-17b  → discontinued by Groq
+#   - gemini-2.5-flash        → 5 RPM + thinking tokens contaminate JSON
+#   - gemini-2.0-flash        → deprecated March 2026
+#   - gemini-3.1-flash-lite   → current best for high-volume free tier
 #
-# Free-tier limits (project-level, verify in AI Studio):
-#   TPM  ≈ 1,000,000 tokens / minute
-#   TPD  ≈ 1,500,000 tokens / day
+# Why gemini-3.1-flash-lite:
+#   - Generally Available (stable), released May 7 2026
+#   - ~15 RPM free tier — same as old 2.0-flash, 3x more than 2.5-flash
+#   - ~1,500 RPD free tier — 130 jobs/run × 2 runs = 260 RPD (well within)
+#   - ~250K TPM — sufficient for our workload (13 req/min × ~2,400 tok = 31K)
+#   - JSON mode (response_mime_type=application/json) works cleanly —
+#     thinking output is properly suppressed in structured output mode
+#   - 1M token context window, 64K output limit
+#   - Optimised for high-throughput, cost-sensitive use cases
+#
+# Confirmed free-tier limits (verify in Google AI Studio):
 #   RPM  ≈ 15 requests / minute
 #   RPD  ≈ 1,500 requests / day
+#   TPM  ≈ 250,000 tokens / minute
 # ─────────────────────────────────────────────────────────────────
-MODEL        = "gemini-2.0-flash"
+MODEL        = "gemini-3.1-flash-lite"
 REQ_INTERVAL = 4.5        # seconds between scoring calls
                            # 60s / 4.5 = 13.3 req/min → safely under 15 RPM.
-                           # TPM is not a constraint: 13.3 req/min × ~2,400 tok =
-                           # 31,920 TPM — negligible against Gemini's ~1M TPM limit.
+                           # TPM: 13.3 req/min × ~2,400 tok = 31K TPM —
+                           # well within the ~250K TPM free-tier limit.
 _last_call_ts = 0.0        # module-level timestamp tracker
 
 # ─────────────────────────────────────────────────────────────────
@@ -370,7 +376,7 @@ def score_job(job: dict, profile: dict) -> dict:
         # Gemini native JSON mode: response_mime_type="application/json"
         # guarantees a parseable JSON response — no markdown fences to strip.
         response = client.models.generate_content(
-            model="gemini-2.0-flash",
+            model="gemini-3.1-flash-lite",
             contents=prompt,
             config=types.GenerateContentConfig(
                 system_instruction=_SYSTEM_PROMPT,

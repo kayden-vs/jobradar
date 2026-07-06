@@ -152,7 +152,7 @@ All weights configurable in `profile.yaml → ranker_weights:`.
 
 | Key constant | Value |
 |---|---|
-| `MODEL` | `gemini-2.0-flash` |
+| `MODEL` | `gemini-3.1-flash-lite` |
 | `REQ_INTERVAL` | 4.5s (~13.3 req/min, under Gemini's ~15 RPM) |
 | `SYSTEM_PROMPT_TOKENS` | ~1,400 (system prompt + 5 few-shot examples) |
 | `RESPONSE_TOKENS` | ~500 (full reasons always returned) |
