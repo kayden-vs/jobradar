@@ -237,6 +237,9 @@ def run(profile_path: str, dry_run: bool = False):
     if urgent_jobs:
         logger.info(f"Sending {len(urgent_jobs)} urgent Telegram alerts")
         notify_urgent_jobs(urgent_jobs, chat_id)
+        from storage.db import mark_job_notified
+        for job in urgent_jobs:
+            mark_job_notified(job, level=1, db_path=db_path)
 
     # Session-end divider — always the last message, carries stats for the run.
     # Sent even when urgent=0 so there's always a visible session boundary.

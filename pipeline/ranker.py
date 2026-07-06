@@ -121,6 +121,7 @@ _DEFAULT_WEIGHTS: dict = {
     "ats_stub_desc_threshold":   300,
     "penalty_role_mismatch":     -4,  # clearly non-backend role (TechOps, IT Ops, etc.)
     "penalty_seniority_level":   -8,  # Senior/Staff/Principal/Lead/SDE III+ in title
+    "penalty_old_job":          -10,  # job posted >10 days ago or previous year
     # ── Synergy bonuses ───────────────────────────────────────────────────
     "synergy_skill_domain":   3,   # primary skill AND high-priority domain both found
     "synergy_skill_project":  2,   # primary skill AND a project signal both found
@@ -528,11 +529,11 @@ def _recency_bonus(posted_at: str | None, w: dict) -> int:
         (r'\btoday\b|\b[0-9]?\s*hour[s]?\s+ago\b|\bminute[s]?\s+ago\b', w["recency_7d"]),
         (r'\b[1-6]\s*day[s]?\s+ago\b|\byesterday\b',                     w["recency_7d"]),
         (r'\b[7-9]\s*day[s]?\s+ago\b|\b1\s*week\s+ago\b',               w["recency_14d"]),
-        (r'\b1[0-4]\s*day[s]?\s+ago\b',                                  w["recency_14d"]),
-        (r'\b1[5-9]\s*day[s]?\s+ago\b|\b2[0-9]\s*day[s]?\s+ago\b',      w["recency_30d"]),
-        (r'\b[23]\s*week[s]?\s+ago\b',                                   w["recency_30d"]),
-        (r'\b1\s*month\s+ago\b',                                          w["recency_30d"]),
-        (r'\b[2-9]\s*month[s]?\s+ago\b|\byear[s]?\s+ago\b',              0),
+        (r'\b10\s*day[s]?\s+ago\b',                                      w["recency_14d"]),
+        (r'\b1[1-9]\s*day[s]?\s+ago\b|\b[2-9][0-9]\s*day[s]?\s+ago\b',  w.get("penalty_old_job", -10)),
+        (r'\b[1-9]\s*month[s]?\s+ago\b',                                 w.get("penalty_old_job", -10)),
+        (r'\byear[s]?\s+ago\b',                                          w.get("penalty_old_job", -10)),
+        (r'\b2024\b|\b2025\b',                                           w.get("penalty_old_job", -10)),
     ]
     for pattern, bonus in relative_map:
         if re.search(pattern, s):
@@ -1039,11 +1040,14 @@ def _heuristic_score(
         score += b
         reasons.append(f"has-date({b:+})")
 
-    # ── Recency bonus ─────────────────────────────────────────────────────
+    # ── Recency bonus / penalty ───────────────────────────────────────────
     rb = _recency_bonus(job.get("posted_at"), w)
     if rb > 0:
         score += rb
         reasons.append(f"recency({rb:+})")
+    elif rb < 0:
+        score += rb
+        reasons.append(f"old-job-penalty({rb:+})")
 
     # ── Layer 2: Skill Density (NEW v2) ───────────────────────────────────
     density_bonus, density_reasons = _skill_density_score(full_text, pp, w)

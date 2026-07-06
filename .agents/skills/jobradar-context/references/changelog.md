@@ -4,6 +4,19 @@
 
 ---
 
+## [2026-07-06] Fix duplicate Telegram notifications and add age penalties
+**What**:
+1. Added `mark_job_notified(job)` to `storage/db.py` to correctly flag jobs as notified (`notified=1`).
+2. Updated `main.py` to call `mark_job_notified` after sending Telegram alerts.
+3. Added a new hard rule in `pipeline/scorer.py` `_SYSTEM_PROMPT` to hard cap scores ≤3 for jobs >10 days old or posted in a previous year (e.g. 2024).
+4. Added `penalty_old_job: -10` to `pipeline/ranker.py` and updated `_recency_bonus` to apply this massive penalty to old jobs before they reach the AI.
+**Why**:
+1. `save_job` inserts jobs with `notified=0`, but the bot never updated this flag after sending an alert. If a scraper later pulled the exact same job with a slightly different URL/location hash that bypassed deduplication, the DB treated it as un-notified and re-sent the Telegram alert.
+2. The AI was erroneously scoring old (e.g., 2024) jobs 9/10 because it prioritized keyword density over freshness, and the ranker lacked a negative penalty for old jobs to push them out of the AI queue.
+**Files**: `storage/db.py`, `main.py`, `pipeline/scorer.py`, `pipeline/ranker.py`
+
+---
+
 ## [2026-07-06] Hotfix 2: switch gemini-2.0-flash → gemini-3.1-flash-lite (correct final model)
 **What**: Changed `MODEL` from `gemini-2.0-flash` to `gemini-3.1-flash-lite` in `scorer.py` and `hackernews.py`.
 **Why**: `gemini-2.0-flash` was deprecated by Google in March 2026 — it should not be used. The correct high-volume free tier model as of July 2026 is `gemini-3.1-flash-lite` (GA stable, released May 7 2026).

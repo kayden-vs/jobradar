@@ -241,6 +241,27 @@ def save_job(
     conn.close()
 
 
+def mark_job_notified(job: dict, level: int = 1, db_path: str | None = None):
+    """Mark a job as notified (e.g., sent to Telegram).
+    level=1 means urgent/telegram, level=2 means digest.
+    """
+    job_id = make_job_id(job)
+    url_id = make_url_id(job)
+    conn = sqlite3.connect(_db(db_path))
+    # Update by id primarily, or url_id if available
+    conn.execute(
+        "UPDATE jobs SET notified=? WHERE id=?",
+        (level, job_id),
+    )
+    if url_id:
+        conn.execute(
+            "UPDATE jobs SET notified=? WHERE url_id=? AND id!=?",
+            (level, url_id, job_id),
+        )
+    conn.commit()
+    conn.close()
+
+
 def get_jobs_by_score(min_score: int = 6, db_path: str | None = None) -> list[dict]:
     """Retrieve jobs above a score threshold for digest."""
     conn = sqlite3.connect(_db(db_path))
