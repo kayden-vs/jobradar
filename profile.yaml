@@ -21,6 +21,8 @@ sources:
   jobicy:         true   # Jobicy.com — free remote jobs API, good for catching remote-first companies open to India
   remoteok:       true   # RemoteOK — JSON API, dev/engineering jobs from global startups open to India timezone
   hiringcafe:     true   # hiring.cafe — aggregated ATS jobs via Next.js API, rich structured data, entry-level filtered
+  telegram_channels: true  # Indian Telegram job channels via Telethon MTProto API (requires one-time login: tools/telethon_login.py)
+                            # Needs: TELEGRAM_API_ID, TELEGRAM_API_HASH, TELEGRAM_SESSION_STRING in .env
 
 
 candidate:

@@ -27,11 +27,11 @@
 
 JobRadar is a pipeline that:
 
-1. **Fetches** jobs from up to 14 sources (ATS APIs, Naukri, Internshala, YC, RSS feeds, Serper Google dorks, etc.)
+1. **Fetches** jobs from up to 17 sources (ATS APIs, Naukri, Internshala, YC, RSS feeds, Serper Google dorks, Telegram channels, etc.)
 2. **Deduplicates** across sources and across runs (SQLite DB — never see the same job twice)
 3. **Filters** with pure-Python rules — no AI cost for ~90% of jobs
 4. **Ranks** remaining jobs by heuristic relevance score (compiled from your `profile.yaml`)
-5. **Scores** top jobs with Groq AI (Llama 4, free tier) on a 1–10 scale
+5. **Scores** top jobs with Gemini AI (free tier) on a 1–10 scale
 6. **Alerts** you via Telegram — instant push for score ≥ 8, summary card at the end of every run
 
 ```
@@ -51,7 +51,7 @@ Everything runs in Python. No Docker, no databases to maintain, no cloud infra r
 | **Git** | To clone the repo. |
 | **Internet access** | All sources are fetched at runtime. |
 | **A Telegram account** | Free. You'll create a bot in 2 minutes. |
-| **A Groq account** | Free. API key from console.groq.com. |
+| **A Gemini account** | Free. API key from [aistudio.google.com](https://aistudio.google.com). |
 | **A Serper account** | Optional but recommended. 2,500 free credits/month at serper.dev. Can disable. |
 
 > **Linux/macOS:** All commands below work as-is.
@@ -89,18 +89,18 @@ pip install -r requirements.txt
 
 ## 4. API Keys — What You Need & How to Get Them
 
-### 4.1 Groq API Key (Required — free)
+### 4.1 Gemini API Key (Required — free)
 
-Groq is what scores your jobs with AI. The free tier is generous enough to run twice daily.
+Gemini scores your jobs with AI. The free tier is generous enough to run twice daily with room to spare.
 
-1. Go to **https://console.groq.com**
-2. Sign up (GitHub login works)
-3. Click **API Keys** → **Create API Key**
-4. Copy it — looks like `gsk_xxxxxxxxxxxxxxxxxxxx`
+1. Go to **https://aistudio.google.com**
+2. Sign in with your Google account → **Get API key** → **Create API key**
+3. Copy it — looks like `AIzaSy_xxxxxxxxxxxxxxxxxxxx`
 
-**Free tier limits** (as of 2026):
-- 500,000 tokens/day — enough for ~89 jobs scored per run × 2 runs/day
-- 30,000 tokens/minute — the pipeline throttles automatically (5s between calls)
+**Free tier limits** (gemini-3.1-flash-lite, as of July 2026):
+- ~15 RPM → pipeline throttles to 13.3 RPM (4.5s gap between calls)
+- ~1,500 RPD → 130 jobs × 2 runs = 260 RPD (17% of budget)
+- ~250K TPM → no token bottleneck at this scale
 
 ### 4.2 Serper API Key (Recommended — free)
 
@@ -130,6 +130,34 @@ You need two things: a **bot token** and your **chat ID**.
 **Step 3 — Start a chat with your bot:**
 - Find your bot by its username and send it `/start` — this is required before it can message you.
 
+### 4.4 Telegram MTProto Credentials (Optional — for Telegram Channels source)
+
+The `telegram_channels` source reads public Indian job channels via the official MTProto API (not HTML scraping). Requires a one-time interactive login to generate a session string.
+
+**Step 1 — Get API credentials** (free, one-time):
+1. Go to **https://my.telegram.org** and sign in with your personal phone number
+2. Click **API development tools** → create an app (any name/platform)
+3. Copy the `App api_id` (integer) and `App api_hash` (hex string)
+
+**Step 2 — Add to `.env`:**
+```env
+TELEGRAM_API_ID=12345678
+TELEGRAM_API_HASH=abcdef1234567890abcdef1234567890
+```
+
+**Step 3 — Run the one-time login script** (interactive, run locally — NOT on EC2):
+```bash
+python tools/telethon_login.py
+```
+Enter your phone number (international format) and the OTP Telegram sends to your app. The script prints a session string and offers to auto-append it to `.env`:
+```env
+TELEGRAM_SESSION_STRING=1BQANOTEuA...
+```
+
+**After setup:** All subsequent runs are fully headless. Copy the three env vars to your EC2 `.env`. No `.session` file to manage — the `StringSession` lives entirely in the env var, survives reboots.
+
+> **Can I skip this?** Yes. Set `telegram_channels: false` in `profile.yaml`. The pipeline gracefully returns `[]` if the env vars are missing.
+
 ---
 
 ## 5. Create Your `.env` File
@@ -137,15 +165,20 @@ You need two things: a **bot token** and your **chat ID**.
 In the root of the repo, create a file named `.env`:
 
 ```env
-GROQ_API_KEY=gsk_xxxxxxxxxxxxxxxxxxxx
+GEMINI_API_KEY=AIzaSy_xxxxxxxxxxxxxxxxxxxx
 SERPER_API_KEY=xxxxxxxxxxxxxxxxxxxxxxxx
 TELEGRAM_BOT_TOKEN=1234567890:AAxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 TELEGRAM_CHAT_ID=987654321
+
+# Telegram Channels source (optional — see Section 4.4 above)
+TELEGRAM_API_ID=12345678
+TELEGRAM_API_HASH=abcdef1234567890abcdef1234567890
+TELEGRAM_SESSION_STRING=1BQANOTEuA...
 ```
 
 > **Important:** Never commit `.env` to git. It's already in `.gitignore`.
 
-The pipeline loads these with `python-dotenv` at startup. If any key is missing, the relevant feature fails gracefully (e.g. missing `SERPER_API_KEY` skips all Serper queries with a warning; missing `TELEGRAM_*` causes notifications to fail).
+The pipeline loads these with `python-dotenv` at startup. If any key is missing, the relevant feature fails gracefully (e.g. missing `SERPER_API_KEY` skips all Serper queries with a warning; missing `TELEGRAM_*` causes notifications to fail; missing Telegram MTProto vars causes `telegram_channels` source to return `[]` with a log warning).
 
 ---
 
@@ -171,11 +204,15 @@ sources:
   wellfound:      false   # Wellfound/AngelList (blocks bots)
   jobicy:         true    # Jobicy.com — free remote jobs API
   remoteok:       true    # RemoteOK — dev/engineering remote jobs
+  hiringcafe:     true    # hiring.cafe — entry-level filtered aggregated jobs
+  telegram_channels: true # 6 Indian Telegram job channels via MTProto API
+                          # Requires: TELEGRAM_API_ID, TELEGRAM_API_HASH, TELEGRAM_SESSION_STRING
+                          # One-time setup: python tools/telethon_login.py
 ```
 
 **Turn a source off** by setting it to `false`. The pipeline checks this before making any network calls.
 
-**Recommended starting config:** Keep `ats`, `naukri`, `internshala`, `yc`, `serper`, `jobicy`, `remoteok` enabled. The others either have reliability issues or are very low signal.
+**Recommended starting config:** Keep `ats`, `naukri`, `internshala`, `yc`, `serper`, `jobicy`, `remoteok`, `hiringcafe`, and `telegram_channels` enabled.
 
 ### 6.2 Candidate Section
 

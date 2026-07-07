@@ -1,6 +1,6 @@
 # JobRadar — Architecture Reference
 
-> Last updated: 2026-07-06
+> Last updated: 2026-07-08
 
 ## Module Map & Key Functions
 
@@ -85,6 +85,30 @@ Self-healing auto-discovery of monthly thread via Algolia API.
 | Function | Purpose |
 |---|---|
 | `fetch_hn_hiring()` | Finds latest thread, parses comments into job dicts |
+
+---
+
+### `sources/telegram_channels.py` — Indian Telegram Job Channels
+
+Fetches 6 curated public Indian job channels via Telethon MTProto API (not HTML scraping). Unstructured posts parsed by Gemini AI into structured job dicts. Requires `TELEGRAM_API_ID`, `TELEGRAM_API_HASH`, `TELEGRAM_SESSION_STRING` in `.env`.
+
+| Key constant | Value | Purpose |
+|---|---|---|
+| `CHANNELS` | 6 usernames | dot_aware, internfreak, getjobss, fresheroffcampus, jobsandinternshipsupdates, CSE_IT_BCA_MCA_Computer_Jobs |
+| `MESSAGES_PER_CHANNEL` | 7 | Messages fetched per channel per run |
+| `INTER_CHANNEL_DELAY` | 1.5s | `asyncio.sleep` between channels to avoid FloodWaitError |
+| `GEMINI_MODEL` | `gemini-3.1-flash-lite` | Same model as scorer/hackernews |
+
+| Function | Purpose |
+|---|---|
+| `fetch_telegram_channels()` | Public sync entry point. Uses `asyncio.run()` to bridge to async Telethon. Returns `list[dict]`. Gracefully returns `[]` if env vars missing. |
+| `_fetch_all_channels()` | Async: connects via `TelegramClient(StringSession(...))`, calls `get_messages(channel, limit=7)` per channel. FloodWaitError → skip channel. ValueError/UsernameInvalidError → log and skip. |
+| `_passes_heuristic(text)` | Lightweight pre-filter: requires job-intent keyword + tech-role keyword, rejects noise patterns (course ads, WhatsApp promos, government exams). Zero AI cost. |
+| `_parse_posts_with_gemini(posts)` | Batches of 5 posts → Gemini JSON extraction → structured job dicts. Uses shared `gemini_throttle()`. |
+
+**Budget impact**: ~42 messages → ~20 filtered → ~4-5 Gemini calls/run (8-10 RPD impact — negligible vs 1,500 RPD budget).
+
+**Tools**: `tools/telethon_login.py` (one-time interactive session string generation), `tools/test_telegram_source.py` (standalone validation).
 
 ---
 
@@ -293,9 +317,10 @@ Every pipeline stage works with `list[dict]`. Standard keys:
 
 | Service | Key env var | Free tier limits |
 |---|---|---|
-| **Groq** | `GROQ_API_KEY` | 500K TPD, 30K TPM, 1K RPD |
+| **Gemini** | `GEMINI_API_KEY` | ~15 RPM, ~1,500 RPD, ~250K TPM |
 | **Serper.dev** | `SERPER_API_KEY` | 2,500 queries/month |
-| **Telegram** | `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID` | Unlimited |
+| **Telegram Bot** | `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID` | Unlimited |
+| **Telegram MTProto (Telethon)** | `TELEGRAM_API_ID` + `TELEGRAM_API_HASH` + `TELEGRAM_SESSION_STRING` | Free, official API. StringSession — no file to persist. One-time login via `tools/telethon_login.py`. |
 
 ---
 

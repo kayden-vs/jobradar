@@ -7,14 +7,14 @@
 <p align="center">
   <a href="https://python.org"><img src="https://img.shields.io/badge/Python-3.11+-3776AB?style=flat&logo=python&logoColor=white" alt="Python 3.11+"/></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-22c55e?style=flat" alt="MIT License"/></a>
-  <a href="#-16-job-sources"><img src="https://img.shields.io/badge/Job%20Sources-16-7c3aed?style=flat" alt="16 Job Sources"/></a>
+  <a href="#-17-job-sources"><img src="https://img.shields.io/badge/Job%20Sources-17-7c3aed?style=flat" alt="17 Job Sources"/></a>
   <a href="#-performance--api-usage"><img src="https://img.shields.io/badge/API%20Cost-100%25%20Free%20Tier-16a34a?style=flat" alt="100% Free Tier"/></a>
   <a href="docs/setup_guide.md"><img src="https://img.shields.io/badge/docs-Setup%20Guide-0ea5e9?style=flat" alt="Setup Guide"/></a>
 </p>
 
 ---
 
-JobRadar aggregates **16 job sources**, eliminates noise with zero-cost rule-based filters, deduplicates across runs, ranks by relevance, scores with AI, and delivers priority alerts straight to **Telegram** — twice daily, entirely on free-tier APIs.
+JobRadar aggregates **17 job sources**, eliminates noise with zero-cost rule-based filters, deduplicates across runs, ranks by relevance, scores with AI, and delivers priority alerts straight to **Telegram** — twice daily, entirely on free-tier APIs.
 
 Built for freshers, interns, and early-career developers. But **fully configurable for any role, stack, domain, or location via `profile.yaml` alone** — no code changes needed whether you're a cybersecurity candidate, a data engineer, or a mobile developer.
 
@@ -27,7 +27,7 @@ Built for freshers, interns, and early-career developers. But **fully configurab
 
 - [How It Works](#-how-it-works)
 - [Features](#-features)
-  - [16 Job Sources](#-16-job-sources)
+  - [17 Job Sources](#-17-job-sources)
   - [Smart Pre-Filter](#️-smart-pre-filter)
   - [Heuristic Relevance Ranker](#-heuristic-relevance-ranker)
   - [AI Scorer](#-ai-scorer)
@@ -108,7 +108,7 @@ Urgent alerts fire the moment a high-scoring job is found. Every run ends with a
 
 ## ✨ Features
 
-### 🔌 16 Job Sources
+### 🔌 17 Job Sources
 
 **Structured ATS APIs** — direct structured API polling of 10 platforms, no scraping, no JS rendering:
 
@@ -142,8 +142,38 @@ All companies are listed in `companies.yaml`. Per-company caps prevent any singl
 | **Reddit Job Feeds** | r/cscareerquestions, r/IndiaJobs, and related subreddits via RSS |
 | **Jobicy / RemoteOK** | Remote jobs JSON APIs. Good for catching remote-first companies open to India timezone candidates |
 | **hiring.cafe** | Aggregated ATS jobs via internal Next.js API. Rich structured data — server-side filtered by seniority, department, location. ~50 high-signal jobs per run |
+| **🆕 Telegram Channels** | **6 curated Indian job channels scraped via Telethon MTProto API** (not HTML scraping — immune to frontend changes). Unstructured posts parsed by Gemini AI into structured job dicts. Channels: `@dot_aware`, `@internfreak`, `@getjobss`, `@fresheroffcampus`, `@jobsandinternshipsupdates`, `@CSE_IT_BCA_MCA_Computer_Jobs`. Requires one-time session setup — see [Telegram Channels Setup](#telegram-channels-setup-one-time) below. |
 
 ---
+
+### 📡 Telegram Channels Setup (One-Time)
+
+This source reads public Telegram job channels directly via the **MTProto API** — the same protocol Telegram apps use. It requires a one-time interactive login to generate a session string, after which all runs (including on EC2) are fully headless.
+
+**Why MTProto instead of HTML scraping?** The `t.me/s/<channel>` web pages use Cloudflare and change structure frequently. MTProto gives clean `message.text` + `message.date` objects directly — no parsing, immune to frontend changes.
+
+**Step 1** — Get free API credentials from [https://my.telegram.org](https://my.telegram.org):
+- Sign in → "API development tools" → create an app → copy `api_id` (integer) and `api_hash`
+
+**Step 2** — Add to `.env`:
+```env
+TELEGRAM_API_ID=12345678
+TELEGRAM_API_HASH=abcdef1234567890abcdef1234567890
+```
+
+**Step 3** — Run the login script **once locally** (needs OTP from your Telegram app):
+```bash
+python tools/telethon_login.py
+```
+This prints a session string and offers to auto-append it to `.env`:
+```env
+TELEGRAM_SESSION_STRING=1BQANOTEuA...
+```
+
+**Step 4** — After that, everything is headless. On EC2: copy the three env vars to your server's `.env`. No `.session` file to manage — the `StringSession` lives entirely in the env var.
+
+> [!NOTE]
+> The session string is equivalent to your Telegram login credentials — treat it like a password. It's already covered by `.gitignore` via `.env`.
 
 ### 🛡️ Smart Pre-Filter
 
@@ -249,6 +279,7 @@ jobradar/
 │   ├── jobicy.py              # Jobicy.com — remote jobs JSON API
 │   ├── remoteok.py            # RemoteOK — JSON API
 │   ├── hiringcafe.py          # hiring.cafe — Next.js API, entry-level filtered
+│   ├── telegram_channels.py   # 6 Indian Telegram channels — Telethon MTProto API + Gemini parsing
 │   ├── cutshort.py            # Cutshort.io API (currently disabled)
 │   ├── instahyre.py           # Instahyre API + scraper fallback (currently disabled)
 │   └── wellfound.py           # Wellfound/AngelList (currently disabled — blocks bots)
@@ -268,6 +299,10 @@ jobradar/
 ├── data/                      # Auto-created at runtime
 │   ├── <profile>.db           # Per-user SQLite database
 │   └── <profile>.log          # Rotating run logs (1MB × 3 files)
+│
+├── tools/
+│   ├── telethon_login.py      # One-time interactive login to generate TELEGRAM_SESSION_STRING
+│   └── test_telegram_source.py  # Standalone test for Telegram channels source
 │
 ├── docs/
 │   ├── setup_guide.md         # Complete setup & customisation guide
@@ -300,6 +335,10 @@ GEMINI_API_KEY=AIzaSy_xxxxxxxxxxxxxxxxxxxxxxxx
 SERPER_API_KEY=xxxxxxxxxxxxxxxxxxxxxxxx
 TELEGRAM_BOT_TOKEN=1234567890:AAxxxxxxxxxxxxxxxx
 TELEGRAM_CHAT_ID=987654321
+# Optional: Telegram Channels source (see docs for one-time setup)
+TELEGRAM_API_ID=12345678
+TELEGRAM_API_HASH=abcdef1234567890abcdef1234567890
+TELEGRAM_SESSION_STRING=1BQANOTEuA...
 ```
 
 ### 3. Configure `profile.yaml`
@@ -387,6 +426,7 @@ Register-ScheduledTask -TaskName "JobRadar" -Action $action -Trigger $trigger -R
 | **Gemini (3.1-flash-lite)** | ~455K tokens | ~1.5M tokens/day | ~1,500 RPD / ~15 RPM free tier |
 | **Serper.dev** | 25 queries | 2,500 queries/month | 1,500/month = 60% of free tier |
 | **Telegram Bot** | ~10–15 messages | Unlimited | Free |
+| **Telegram MTProto** | ~42 messages fetched, ~5 Gemini calls | Unlimited (public channels) | Free — official API, no rate issues |
 
 **Gemini rate limits** (gemini-3.1-flash-lite free tier, confirmed via official docs):
 - **RPM**: ~15 requests/min → `REQ_INTERVAL = 4.5s` gives ~13.3 RPM (safe headroom)

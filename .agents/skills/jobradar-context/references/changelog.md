@@ -4,6 +4,23 @@
 
 ---
 
+## [2026-07-08] Add Telegram channels source via Telethon MTProto API
+**What**:
+1. New source `sources/telegram_channels.py` — reads 6 curated Indian job Telegram channels via Telethon (MTProto API), bypassing fragile HTML scraping of `t.me/s/` pages entirely.
+2. New tool `tools/telethon_login.py` — one-time interactive login script that generates a `StringSession` string for headless EC2 use.
+3. New test `tools/test_telegram_source.py` — standalone validation script (does not touch main.py).
+4. `telethon` added to `requirements.txt` (v1.44.0 installed).
+5. `main.py` updated to import and call `fetch_telegram_channels()` behind `source_enabled("telegram_channels")`.
+6. `profile.yaml` updated with `telegram_channels: true` toggle.
+7. `README.md` updated: source count 16→17, new Telegram Channels section with setup guide, architecture diagram, project structure, and API usage table.
+8. `docs/setup_guide.md` updated: new Telegram Channels API key section, source toggle docs, `.env` template.
+9. Three new `.env` keys documented: `TELEGRAM_API_ID`, `TELEGRAM_API_HASH`, `TELEGRAM_SESSION_STRING`.
+**Why**: Indian Telegram job channels (internfreak, dot_aware, fresheroffcampus, etc.) post exclusive off-campus drives and internship links not available on any job board. MTProto gives clean structured message objects directly — immune to Telegram frontend changes. Tested: 41 raw messages → 8 heuristic-filtered → 12 structured job dicts extracted (verified 3 samples: American Express, Flipkart, Danaher — all correctly parsed).
+**Files**: `sources/telegram_channels.py` [NEW], `tools/telethon_login.py` [NEW], `tools/test_telegram_source.py` [NEW], `requirements.txt`, `main.py`, `profile.yaml`, `README.md`, `docs/setup_guide.md`
+**Status**: Complete
+
+---
+
 ## [2026-07-06] Fix duplicate Telegram notifications and add age penalties
 **What**:
 1. Added `mark_job_notified(job)` to `storage/db.py` to correctly flag jobs as notified (`notified=1`).

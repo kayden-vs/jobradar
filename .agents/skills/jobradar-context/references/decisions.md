@@ -1,6 +1,30 @@
 # JobRadar — Architecture Decision Records
 
-> Last updated: 2026-07-06
+> Last updated: 2026-07-08
+
+---
+
+## ADR-013: Telegram Job Channels via Telethon MTProto API
+
+**Date**: 2026-07-08
+**Decision**: Use Telethon (MTProto API client) to read Telegram job channels instead of HTML scraping `t.me/s/<channel>` pages. Use `StringSession` stored in `.env` for headless operation.
+**Context**: Indian Telegram channels (`internfreak`, `dot_aware`, `fresheroffcampus`, etc.) post exclusive off-campus drives and internship links not available on any structured job board. These are high-value, India-specific signals that complement ATS/Naukri coverage.
+**Rationale**:
+- `t.me/s/<channel>` pages use Cloudflare and CSP headers — scrapers break on HTML structure changes. MTProto is the official API (same protocol the Telegram apps use) — immune to frontend changes.
+- `StringSession` stores auth key in a single env var — no `.session` file to manage or persist across EC2 reboots.
+- Telethon is pure Python, MIT-licensed, well-maintained (v1.44.0, 15K+ stars). No binary deps.
+- `asyncio.run()` bridge in the sync entry point keeps the rest of the pipeline synchronous.
+- Per-channel error isolation: `FloodWaitError` → skip channel (don't block pipeline). Invalid username → log and continue.
+- Lightweight heuristic pre-filter (job-intent keyword + tech-role keyword) runs before Gemini calls, cutting noise by ~80%.
+- Gemini budget impact: ~4-5 calls/run (8-10 RPD — negligible vs 1,500 RPD budget).
+**Test results**: 41 raw messages fetched → 8 passed heuristic → 12 structured job dicts extracted. Sample verification: American Express SDE-I, Flipkart GRiD 8.0, Danaher SDE-I — all correctly parsed with title/company/location/url.
+**Alternatives considered**:
+- HTML scraping `t.me/s/<channel>`: fragile, blocked by Cloudflare, breaks on layout changes.
+- Telegram Bot API (`getUpdates`): bots cannot read channel history unless added as admin — not suitable for public channel monitoring.
+- RSS feed via third-party services: unreliable, often rate-limited, stale data.
+**Final choice**: Telethon with `StringSession` + `asyncio.run()` + shared `gemini_throttle()`.
+**New env vars**: `TELEGRAM_API_ID`, `TELEGRAM_API_HASH`, `TELEGRAM_SESSION_STRING`
+**New dependency**: `telethon` (added to `requirements.txt`)
 
 ---
 

@@ -11,3 +11,4 @@ aiohttp
 beautifulsoup4
 lxml
 python-dateutil
+telethon
