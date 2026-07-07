@@ -4,6 +4,14 @@
 
 ---
 
+## [2026-07-08] Add 3 Telegram channels + dedup verification
+**What**: Added `@jobsinternshipswale`, `@jobsandinternshipsindia`, and `@gocareers` to `CHANNELS` in `sources/telegram_channels.py` (6 → 9 channels). Updated `tests/test_telegram_source.py` to cover all 9 channels and added a dedup verification section (5 cases: emoji variance, company suffix noise, cross-run persistence, URL param stripping, distinct job negative test). All channels connect and fetch correctly. Live test: 62 raw messages → 21 heuristic-filtered → 23 jobs extracted. New channels `@gocareers` and `@jobsinternshipswale` both passed heuristic filter with 7 and 6 posts respectively.
+**Why**: More channel coverage = higher chance of catching exclusive off-campus drives. Dedup verification gives confidence that re-fetching the same posts from inactive channels won't send duplicate alerts.
+**Files**: `sources/telegram_channels.py`, `tests/test_telegram_source.py`, `README.md`
+**Status**: Complete
+
+---
+
 ## [2026-07-08] Add Telegram channels source via Telethon MTProto API
 **What**:
 1. New source `sources/telegram_channels.py` — reads 6 curated Indian job Telegram channels via Telethon (MTProto API), bypassing fragile HTML scraping of `t.me/s/` pages entirely.

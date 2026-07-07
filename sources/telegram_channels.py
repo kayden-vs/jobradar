@@ -67,9 +67,12 @@ CHANNELS: list[str] = [
     "fresheroffcampus",
     "jobsandinternshipsupdates",
     "CSE_IT_BCA_MCA_Computer_Jobs",
+    "jobsinternshipswale",
+    "jobsandinternshipsindia",
+    "gocareers",
 ]
 
-# Messages to fetch per channel — 6-7 is enough to catch recent posts
+# Messages to fetch per channel — 7 is enough to catch recent posts
 # without over-fetching from slow/inactive channels.
 MESSAGES_PER_CHANNEL: int = 7
 

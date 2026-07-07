@@ -60,7 +60,7 @@ Urgent alerts fire the moment a high-scoring job is found. Every run ends with a
 
 ```
 ┌─────────────────────────────────────────────────┐
-│         16 Job Sources (Concurrent)             │
+│         17 Job Sources (Concurrent)             │
 │  ATS APIs · Workday · YC · hackernews · Naukri  │
 │  hiringcafe · Blogs RSS · Serper · HN · More    │
 └────────────────────────┬────────────────────────┘
@@ -142,38 +142,9 @@ All companies are listed in `companies.yaml`. Per-company caps prevent any singl
 | **Reddit Job Feeds** | r/cscareerquestions, r/IndiaJobs, and related subreddits via RSS |
 | **Jobicy / RemoteOK** | Remote jobs JSON APIs. Good for catching remote-first companies open to India timezone candidates |
 | **hiring.cafe** | Aggregated ATS jobs via internal Next.js API. Rich structured data — server-side filtered by seniority, department, location. ~50 high-signal jobs per run |
-| **🆕 Telegram Channels** | **6 curated Indian job channels scraped via Telethon MTProto API** (not HTML scraping — immune to frontend changes). Unstructured posts parsed by Gemini AI into structured job dicts. Channels: `@dot_aware`, `@internfreak`, `@getjobss`, `@fresheroffcampus`, `@jobsandinternshipsupdates`, `@CSE_IT_BCA_MCA_Computer_Jobs`. Requires one-time session setup — see [Telegram Channels Setup](#telegram-channels-setup-one-time) below. |
+| **Telegram Channels** | 9 curated Indian job channels via **Telethon MTProto API** — reads messages as structured objects, immune to frontend changes. Channels: `@dot_aware` · `@internfreak` · `@getjobss` · `@fresheroffcampus` · `@jobsandinternshipsupdates` · `@CSE_IT_BCA_MCA_Computer_Jobs` · `@jobsinternshipswale` · `@jobsandinternshipsindia` · `@gocareers`. Posts parsed by Gemini AI into structured job dicts. Requires one-time setup — see [Quick Start → Step 3](#3-optional-telegram-channels-source). |
 
 ---
-
-### 📡 Telegram Channels Setup (One-Time)
-
-This source reads public Telegram job channels directly via the **MTProto API** — the same protocol Telegram apps use. It requires a one-time interactive login to generate a session string, after which all runs (including on EC2) are fully headless.
-
-**Why MTProto instead of HTML scraping?** The `t.me/s/<channel>` web pages use Cloudflare and change structure frequently. MTProto gives clean `message.text` + `message.date` objects directly — no parsing, immune to frontend changes.
-
-**Step 1** — Get free API credentials from [https://my.telegram.org](https://my.telegram.org):
-- Sign in → "API development tools" → create an app → copy `api_id` (integer) and `api_hash`
-
-**Step 2** — Add to `.env`:
-```env
-TELEGRAM_API_ID=12345678
-TELEGRAM_API_HASH=abcdef1234567890abcdef1234567890
-```
-
-**Step 3** — Run the login script **once locally** (needs OTP from your Telegram app):
-```bash
-python tools/telethon_login.py
-```
-This prints a session string and offers to auto-append it to `.env`:
-```env
-TELEGRAM_SESSION_STRING=1BQANOTEuA...
-```
-
-**Step 4** — After that, everything is headless. On EC2: copy the three env vars to your server's `.env`. No `.session` file to manage — the `StringSession` lives entirely in the env var.
-
-> [!NOTE]
-> The session string is equivalent to your Telegram login credentials — treat it like a password. It's already covered by `.gitignore` via `.env`.
 
 ### 🛡️ Smart Pre-Filter
 
@@ -335,13 +306,43 @@ GEMINI_API_KEY=AIzaSy_xxxxxxxxxxxxxxxxxxxxxxxx
 SERPER_API_KEY=xxxxxxxxxxxxxxxxxxxxxxxx
 TELEGRAM_BOT_TOKEN=1234567890:AAxxxxxxxxxxxxxxxx
 TELEGRAM_CHAT_ID=987654321
-# Optional: Telegram Channels source (see docs for one-time setup)
-TELEGRAM_API_ID=12345678
-TELEGRAM_API_HASH=abcdef1234567890abcdef1234567890
-TELEGRAM_SESSION_STRING=1BQANOTEuA...
 ```
 
-### 3. Configure `profile.yaml`
+### 3. *(Optional)* Telegram Channels Source
+
+Skip this step if you don't plan to use the Telegram channels source. If you do, it requires a one-time interactive login to generate a session string — after which all runs (including on EC2) are fully headless.
+
+**Why MTProto instead of scraping?** The `t.me/s/<channel>` web pages use Cloudflare and change structure frequently. Telethon's MTProto gives clean `message.text` + `message.date` objects directly — no HTML parsing, immune to frontend changes.
+
+**Step 1** — Get free API credentials from [my.telegram.org](https://my.telegram.org):
+> Sign in → "API development tools" → create an app → copy `api_id` (integer) and `api_hash`
+
+**Step 2** — Add to `.env`:
+```env
+TELEGRAM_API_ID=12345678
+TELEGRAM_API_HASH=abcdef1234567890abcdef1234567890
+```
+
+**Step 3** — Run the login script **once locally** (needs OTP from your Telegram app):
+```bash
+python tools/telethon_login.py
+```
+This prints a `StringSession` string and offers to auto-append it to `.env`:
+```env
+TELEGRAM_SESSION_STRING=1BQANOTEuA...
+```
+On EC2: copy all three vars to your server's `.env`. No `.session` file to manage.
+
+> [!CAUTION]
+> The session string is equivalent to your Telegram login credentials — treat it like a password. It's already covered by `.gitignore` via `.env`.
+
+**Step 4** — Enable the source in `profile.yaml`:
+```yaml
+sources:
+  telegram_channels: true
+```
+
+### 4. Configure `profile.yaml`
 
 Edit to match your skills, target roles, locations, and hard-reject rules:
 
@@ -370,7 +371,7 @@ hard_reject:
 
 Full field reference → [`docs/setup_guide.md`](docs/setup_guide.md)
 
-### 4. Validate (Dry Run)
+### 5. Validate (Dry Run)
 
 ```bash
 python main.py profile.yaml --dry-run
@@ -378,7 +379,7 @@ python main.py profile.yaml --dry-run
 
 Prints your full config summary and confirms the DB initialises correctly — no API calls made.
 
-### 5. Run
+### 6. Run
 
 ```bash
 python main.py
