@@ -333,12 +333,46 @@ _INTERNSHALA_TITLE_REJECT_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Universal hard-reject for clearly non-SWE roles that can still slip through
+# source-specific filters (e.g. "Revenue Enablement Intern" passes the ATS allowlist
+# via the "intern" signal, "GTM Systems Specialist" via "systems").
+#
+# Applied BEFORE source-specific logic in check_title_relevance() — zero exceptions.
+# All patterns use \b word boundaries to prevent false positives:
+#   \bsales\b     → matches "Sales Exec" but NOT "Salesforce Engineer"
+#   \bfinance\b   → matches "Finance Intern" but NOT "Financial Software Engineer"
+#   \btalent\b    → matches "Talent Acquisition" but NOT "talented developer"
+#   \bhr\b        → matches "HR Manager" but NOT "Chrome" or "Thread"
+#
+# Intentionally NOT included (too risky for false positives):
+#   "solutions engineer" — legitimate SWE title at many companies (Stripe, Cloudflare)
+#   "customer engineer"  — legitimate at Google, Databricks, etc.
+#   "forward deployed"   — legitimate at Palantir, others
+#   "security"           — "Security Engineer" is a valid SWE target
+_NON_SWE_TITLE_RE = re.compile(
+    r'\b(sales|account\s+executive|business\s+development|revenue|marketing|audit)\b'
+    r'|\b(finance|finops|gtm|go[\s\-]+to[\s\-]+market)\b'
+    r'|\b(customer\s+success|devrel|developer\s+relations)\b'
+    r'|\b(solutions?\s+consulting|presales|pre[\s\-]sales)\b'
+    r'|\b(recruiting|talent\s+acquisition|talent\s+management)\b'
+    r'|\b(hr\s+|human\s+resources)'
+    r'|\b(platformops|techops|it\s+operations|sysadmin|system\s+administrator)\b'
+    r'|\b(network\s+engineer|content\s+engineer|technical\s+writer)\b',
+    re.IGNORECASE,
+)
+
 
 def check_title_relevance(title: str, source: str = "") -> tuple[bool, str]:
     """
     Positive / negative title filter before the AI scorer.
 
-    Three modes depending on source:
+    Four modes in sequence:
+
+    0. Universal non-SWE hard-reject (ALL sources):
+       Rejects roles that are explicitly non-engineering regardless of source —
+       e.g. "Revenue Enablement Intern" (passes ATS 'intern' allowlist but is
+       clearly non-SWE), "GTM Systems Specialist" (passes via 'systems').
+       Applied first with word-boundary regex to prevent false positives.
 
     1. ATS sources (greenhouse, lever, ashby, workable, workday):
        Strict POSITIVE allow-list via substring matching — safe because ATS
@@ -357,6 +391,14 @@ def check_title_relevance(title: str, source: str = "") -> tuple[bool, str]:
        passes ambiguous titles through to the AI scorer.
     """
     title_lower = title.lower()
+
+    # ── 0. Universal non-SWE hard-reject (all sources) ────────────────────
+    # Must run BEFORE source-specific logic — catches non-SWE roles that
+    # slip through positive allowlists (e.g. "Revenue Enablement Intern"
+    # passes ATS allowlist via "intern" but is clearly non-engineering).
+    m = _NON_SWE_TITLE_RE.search(title)
+    if m:
+        return True, f"Non-SWE role title: '{m.group(0).strip()}'"
 
     # ── Block Glassdoor/job-board aggregate listing page titles ────────────
     if re.match(r'^\d[\d,]* ', title_lower):

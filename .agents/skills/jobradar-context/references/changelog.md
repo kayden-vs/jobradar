@@ -50,6 +50,14 @@
 **Why**: Groq discontinued `llama-4-scout-17b-16e-instruct`. All remaining Groq models have 6K–12K TPM limits (vs Scout's 30K) which would require 15–20s delays and ~34 min scoring phases. Gemini 2.5 Flash free tier offers ~1M TPM — no TPM constraint at all.
 **Files**: `pipeline/scorer.py`, `sources/hackernews.py`, `requirements.txt`, `profile.yaml`, `tests/test_sources_hackernews.py`, `references/architecture.md`, `references/decisions.md`, `references/changelog.md`
 **Status**: Branch `feat/gemini-scorer` — not yet merged. Needs `pip install google-genai` on EC2 and live test run before merge.
+## [2026-07-06] Fix Workday lazy-fetch ranking penalty (design flaw)
+**What**: Workday jobs entered the pipeline with `description=""` because JDs are lazy-fetched in `scorer.py` after ranking. This meant the ranker operated on title+location only, giving Workday jobs systematically low heuristic scores. With 793 eligible jobs and a 130-job AI cap, Cisco's 130 Workday jobs (and other curated companies) were mostly cut before the AI could score them.
+Fix has two parts:
+1. **`sources/workday.py`**: Instead of `description=""`, inject a compact synthetic stub at list-fetch time: `"Role: {title[:70]}. Company: {company[:40]}. Location: {loc_short[:30]}."` (~67–149 chars). Stub is built from data already in the list response — zero extra HTTP calls. The scorer's existing `len(desc) < 150` threshold still fires → full JD is still fetched lazily. Stub is hard-capped at 149 chars with per-field truncation + a safety fallback.
+2. **`pipeline/ranker.py` + `profile.yaml`**: Added `source_workday_bonus: +2` in `_source_adjustment()`. Workday companies in `companies.yaml` are curated ATS employers (Cisco, Adobe, Samsung, BrowserStack, Sprinklr, etc.) — structurally reliable data.
+**Why**: v4 and v5 logs both showed Cisco (130 jobs) being almost entirely cut by the post-ranking AI cap. Root cause: ranker couldn't evaluate Workday jobs fairly without descriptions. This is the same flaw noted in v3 analysis.
+**Files**: `sources/workday.py`, `pipeline/ranker.py`, `profile.yaml`
+**Status**: Complete
 
 ---
 

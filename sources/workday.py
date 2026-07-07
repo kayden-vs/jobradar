@@ -400,11 +400,29 @@ def fetch_workday(
             bullet_fields = posting.get("bulletFields", [])
             job_req_id    = bullet_fields[0] if bullet_fields else ""
 
+            # Build a compact stub description from list-endpoint data.
+            # The full JD is lazy-fetched in scorer.py (existing path:
+            # `_workday_detail_path` present + len(desc) < 150).
+            # This stub gives the ranker real signals (company tier,
+            # location affinity) without any extra HTTP calls.
+            # CRITICAL: keep under 150 chars so the lazy-fetch still fires.
+            # Use first location segment only (before comma) to stay compact.
+            _loc_short = location_text.split(",")[0].strip()
+            stub_desc = (
+                f"Role: {title[:70]}. "
+                f"Company: {company_name[:40]}. "
+                f"Location: {_loc_short[:30]}."
+            )
+            # Safety assertion — should never exceed 150 given the caps above
+            # (70 + 40 + 30 + fixed chars ≈ 165 worst-case; truncate if so)
+            if len(stub_desc) >= 150:
+                stub_desc = stub_desc[:149]
+
             jobs.append({
                 "title":       title,
                 "company":     company_name,
                 "location":    location_text,
-                "description": "",  # Lazy-fetched later in scorer.py
+                "description": stub_desc,
                 "url":         _build_job_url(tenant, wd_server, site, external_path),
                 "source":      "workday",
                 "salary":      "",
