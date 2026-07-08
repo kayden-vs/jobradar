@@ -167,7 +167,7 @@ jobradar/
 │       └── jobradar.yml       # GitHub Actions scheduler
 │
 └── data/
-    └── jobradar.db            # SQLite database (auto-created)
+    └── profile.db             # SQLite database (auto-created)
 ```
 
 ---
@@ -1325,7 +1325,7 @@ import logging
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
-DB_PATH = "data/jobradar.db"
+DB_PATH = "data/profile.db"
 
 
 def init_db():
@@ -2042,7 +2042,7 @@ jobs:
       - name: Restore database cache
         uses: actions/cache@v4
         with:
-          path: data/jobradar.db
+          path: data/profile.db
           key: jobradar-db-${{ github.run_number }}
           restore-keys: |
             jobradar-db-
@@ -2174,7 +2174,7 @@ python -c "from sources.cutshort import fetch_cutshort; print(fetch_cutshort()[:
 python -c "from sources.serper import fetch_serper_jobs; print(fetch_serper_jobs()[:2])"
 
 # Check what's in the database
-sqlite3 data/jobradar.db "SELECT title, company, score FROM jobs ORDER BY score DESC LIMIT 20;"
+sqlite3 data/profile.db "SELECT title, company, score FROM jobs ORDER BY score DESC LIMIT 20;"
 
 # Manually trigger a Telegram test
 python -c "

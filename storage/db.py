@@ -5,7 +5,7 @@ import re
 from datetime import datetime
 
 logger          = logging.getLogger(__name__)
-_DEFAULT_DB_PATH = "data/jobradar.db"
+_DEFAULT_DB_PATH = "data/profile.db"
 
 
 def _db(db_path: str | None) -> str:

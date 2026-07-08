@@ -4,6 +4,14 @@
 
 ---
 
+## [2026-07-09] Consolidate to single DB: profile.db
+**What**: Merged all 353 historical jobs from `data/jobradar.db` into `data/profile.db` using column-aware `INSERT OR IGNORE` (349 inserted, 4 true duplicates skipped — final count 420 jobs). Changed `_DEFAULT_DB_PATH` in `storage/db.py` from `"data/jobradar.db"` to `"data/profile.db"`. Deleted `data/jobradar.db`, `data/jobradar_copy.db`, and empty `data/rohit.db`. Updated all `jobradar.db` references in `docs/jobradar_guide.md` and `docs/implementation_guide.md`.
+**Why**: Two separate DB files (`jobradar.db` from the old hardcoded default, `profile.db` from the per-profile naming scheme) were confusing and caused data to be split across files. Now there is exactly one DB file: `data/profile.db`. The only code change was one line in `storage/db.py`.
+**Files**: `storage/db.py`, `docs/jobradar_guide.md`, `docs/implementation_guide.md`, `data/jobradar.db` [DELETED], `data/jobradar_copy.db` [DELETED], `data/rohit.db` [DELETED]
+**Status**: Complete
+
+---
+
 ## [2026-07-08] Add 3 Telegram channels + dedup verification
 **What**: Added `@jobsinternshipswale`, `@jobsandinternshipsindia`, and `@gocareers` to `CHANNELS` in `sources/telegram_channels.py` (6 → 9 channels). Updated `tests/test_telegram_source.py` to cover all 9 channels and added a dedup verification section (5 cases: emoji variance, company suffix noise, cross-run persistence, URL param stripping, distinct job negative test). All channels connect and fetch correctly. Live test: 62 raw messages → 21 heuristic-filtered → 23 jobs extracted. New channels `@gocareers` and `@jobsinternshipswale` both passed heuristic filter with 7 and 6 posts respectively.
 **Why**: More channel coverage = higher chance of catching exclusive off-campus drives. Dedup verification gives confidence that re-fetching the same posts from inactive channels won't send duplicate alerts.

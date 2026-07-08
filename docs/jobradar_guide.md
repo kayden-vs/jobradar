@@ -30,7 +30,7 @@ If it returns JSON with jobs (not a 404), the slug is correct. Add it.
 `hackernews.py` now has auto-discovery via the Algolia HN API as a fallback. Even if you forget to update the manual dict, it will find the current month's thread automatically.
 
 **d) Update `hard_reject` in `profile.yaml` after first few real runs**
-After running for a few days, look at `data/jobradar.db` to see what's being filtered. You can open it with any SQLite viewer (e.g. DB Browser for SQLite — free). If good jobs are being incorrectly rejected, loosen the experience regex in `pipeline/prefilter.py`.
+After running for a few days, look at `data/profile.db` to see what's being filtered. You can open it with any SQLite viewer (e.g. DB Browser for SQLite — free). If good jobs are being incorrectly rejected, loosen the experience regex in `pipeline/prefilter.py`.
 
 ---
 
@@ -108,7 +108,7 @@ Your `.github/workflows/jobradar.yml` runs at 8:00 AM IST (2:30 AM UTC). Require
 **Short answer: Yes, but SQLite needs a workaround.**
 
 ### The SQLite Problem
-Render's free tier has an **ephemeral filesystem** — `data/jobradar.db` gets wiped on every restart. Deduplication stops working.
+Render's free tier has an **ephemeral filesystem** — `data/profile.db` gets wiped on every restart. Deduplication stops working.
 
 ### Solutions (in order of ease)
 

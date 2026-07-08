@@ -66,8 +66,8 @@ jobradar/
 │   └── db.py                # SQLite schema, dedup functions, job CRUD, run stats, application tracker
 │
 ├── data/                    # Auto-created at runtime (gitignored)
-│   ├── <profile>.db         # Per-user SQLite database
-│   └── <profile>.log        # Rotating run logs (1MB × 3 files)
+│   ├── profile.db           # Single SQLite database (named after profile.yaml)
+│   └── profile.log          # Rotating run logs (1MB × 3 files)
 │
 └── docs/                    # Human-facing documentation
     ├── setup_guide.md       # Full setup walkthrough

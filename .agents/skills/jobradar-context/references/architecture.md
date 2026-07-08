@@ -208,7 +208,7 @@ Features:
 
 | Function | Purpose |
 |---|---|
-| `init_db(db_path)` | Creates tables + indexes if not exist. Safe to call every run. |
+| `init_db(db_path)` | Creates tables + indexes if not exist. Safe to call every run. Default: `data/profile.db` |
 | `make_job_id(job)` | MD5 of normalised title+company+location |
 | `make_url_id(job)` | MD5 of canonical URL (strips tracking params) |
 | `is_duplicate(job, db_path)` | Checks both hash keys |
