@@ -1,17 +1,20 @@
 """
 pipeline/gemini_throttle.py — Shared Gemini API rate-limit throttle.
-Both hackernews.py (HN comment parsing) and scorer.py (job scoring) call
-the same Gemini API key and count toward the same 15 RPM / 1,500 RPD quota.
-This module holds a single process-level timestamp so both callers share one
+hackernews.py (HN comment parsing), telegram_channels.py (post extraction),
+and scorer.py (job scoring) all call the same Gemini API key and count
+toward the same 15 RPM / 1,500 RPD quota.
+This module holds a single process-level timestamp so all callers share one
 inter-request interval and never collide on the rate limit.
 Usage:
     from pipeline.gemini_throttle import gemini_throttle
     gemini_throttle()   # blocks until it is safe to call Gemini
 Rate limit math (gemini-3.1-flash-lite free tier):
     REQ_INTERVAL = 4.5 s  →  ~13.3 req/min  →  safely under 15 RPM
-    HN parse    : 12 calls/run  × 4.5 s  =  ~54 s
-    AI scoring  : 150 calls/run × 4.5 s  =  ~11.25 min
-    Combined    : 162 calls/run × 2 runs/day  =  324 RPD  (of ~1,500 RPD budget)
+    HN parse        : 12 calls/run  × 4.5 s  =  ~54 s
+    Telegram extract: 13 calls/run  × 4.5 s  =  ~59 s   (⌈63 posts / 5⌉)
+    AI scoring      : 150 calls/run × 4.5 s  =  ~11.25 min
+    Combined        : 175 calls/run × 2 runs/day = 350 RPD (of ~1,500 RPD budget)
+    Each phase runs sequentially (source → scorer) so RPM never spikes.
 """
 import time
 import logging

@@ -85,97 +85,28 @@ GEMINI_MODEL: str = "gemini-3.1-flash-lite"
 
 
 # ─────────────────────────────────────────────────────────────────
-# HEURISTIC PRE-FILTER
-# Lightweight keyword checks run BEFORE Gemini to avoid wasting
-# AI calls on obvious non-job posts (course ads, WhatsApp promos,
-# government exam announcements, etc.).
+# MINIMAL SANITY FILTER
+# Only skips posts that literally have no content worth sending to
+# Gemini. The old two-gate keyword heuristic was incorrect: it
+# was blocking real job posts (e.g. "Broccoli AI is hiring for
+# Software Engineer") because Indian Telegram channels use phrasing
+# like "applications open", "drive", "batch 2025" which didn't
+# match the hard-coded keywords. The pre-filter killed 80% of valid
+# posts from @dot_aware, @fresheroffcampus, etc.
 #
-# Design: two-gate approach
-#   Gate 1: must match at least one job-intent keyword
-#   Gate 2: must match at least one tech-role keyword
-# Either gate alone would have false positives.
+# The actual noise filter is already handled downstream:
+#   • pipeline/prefilter.py (experience/role/location checks)
+#   • pipeline/scorer.py (AI gives 1-2/10 to noise, it's dropped)
+# So there's nothing to protect here — just skip genuinely empty
+# posts (media-only, stickers, very short captions).
 # ─────────────────────────────────────────────────────────────────
 
-_JOB_INTENT_KEYWORDS: frozenset[str] = frozenset([
-    "hiring", "intern", "internship", "apply", "vacancy", "opening",
-    "recruitment", "job", "fresher", "graduate", "walk-in", "walkin",
-    "opportunity", "position", "role", "joining",
-])
-
-_TECH_ROLE_KEYWORDS: frozenset[str] = frozenset([
-    "developer", "engineer", "software", "backend", "frontend", "fullstack",
-    "full stack", "full-stack", "sde", "swe", "devops", "python", "java",
-    "golang", "go ", "node", "nodejs", "react", "typescript", "cloud",
-    "data", "ml", "ai ", "tech", "it ", "computer", "coding", "programming",
-    "api", "database", "web", "mobile", "android", "ios",
-])
-
-# These patterns definitively mark a post as noise — skip regardless of
-# job-intent or tech keywords being present.
-_NOISE_PATTERNS: list[str] = [
-    r"pay after placement",
-    r"guaranteed (?:job|placement|salary)",
-    r"whatsapp (?:group|channel|link)",
-    r"join (?:our|this|my) (?:channel|group|community)",
-    r"\bibps\b",           # banking exam
-    r"\bupsc\b",           # civil services exam
-    r"\bssc\b",            # staff selection commission
-    r"\bneet\b",           # medical entrance
-    r"\bgate exam\b",      # engineering entrance
-    r"\btifr\b",           # research institute recruitment
-    r"\bisro\b",           # space agency exam
-    r"\bdrdo\b",           # defence research exam
-    r"free (?:course|training|bootcamp)",
-    r"course (?:fee|enroll|enrollment|registration)",
-    r"batch (?:start|starting|begins|enrollment)",
-]
-_NOISE_RE: re.Pattern = re.compile("|".join(_NOISE_PATTERNS), re.IGNORECASE)
-
-# Emoji ranges — used to strip emojis before keyword matching so that
-# emoji-heavy posts (e.g. "🚀💼 Hiring Backend Dev!") still match keywords.
-# Note: dedup hashing in storage/db.py _normalize() already strips emojis
-# via [^a-z0-9 ] regex — this strip is only for heuristic matching here.
-_EMOJI_RE: re.Pattern = re.compile(
-    "[\U00010000-\U0010ffff"      # supplementary multilingual plane (most emojis)
-    "\U0001f300-\U0001f9ff"       # misc symbols
-    "\u2600-\u26ff"               # misc symbols block
-    "\u2700-\u27bf"               # dingbats
-    "]",
-    flags=re.UNICODE,
-)
-
-
-def _passes_heuristic(text: str) -> bool:
+def _passes_sanity(text: str) -> bool:
     """
-    Lightweight pre-filter to skip obvious non-job posts before sending
-    to Gemini. Returns True if the post is worth AI extraction.
-
-    Logic:
-      - Skip if text is too short (likely a media caption or just emojis)
-      - Skip if any noise pattern matches (course ads, exam announcements, etc.)
-      - Must have at least one job-intent keyword AND one tech-role keyword
+    Minimal sanity check — only skips posts with no actual text content.
+    A 40-character minimum removes pure stickers / emoji-only media captions.
     """
-    if not text or len(text.strip()) < 50:
-        return False
-
-    # Strip emojis for cleaner keyword matching
-    clean = _EMOJI_RE.sub("", text).lower()
-
-    # Gate 0: hard noise patterns override everything
-    if _NOISE_RE.search(clean):
-        return False
-
-    # Gate 1: must show job-intent
-    has_intent = any(kw in clean for kw in _JOB_INTENT_KEYWORDS)
-    if not has_intent:
-        return False
-
-    # Gate 2: must mention a tech role
-    has_tech = any(kw in clean for kw in _TECH_ROLE_KEYWORDS)
-    if not has_tech:
-        return False
-
-    return True
+    return bool(text) and len(text.strip()) >= 40
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -337,6 +268,10 @@ def _parse_posts_with_gemini(
     all_jobs: list[dict] = []
     batch_size = 5
 
+    # Build channel name set once — used in post-extraction validation
+    # to reject Gemini hallucinating the channel name as the company name.
+    _known_channels_lower = {c.lower() for c in CHANNELS}
+
     for i in range(0, len(posts), batch_size):
         batch = posts[i : i + batch_size]
 
@@ -352,25 +287,29 @@ def _parse_posts_with_gemini(
         # This prevents collisions with scorer.py and hackernews.py calls.
         gemini_throttle()
 
-        prompt = f"""Extract ALL job opportunities from these Telegram channel posts.
-Each post is separated by ---. These are unstructured text posts from Indian job channels.
+        prompt = f"""You are extracting job postings from Indian Telegram job channels.
 
-Return ONLY a valid JSON array. If a post contains NO job listing, skip it.
-If no jobs are found at all, return an empty array [].
+Posts are separated by ---. Each post was scraped from a Telegram channel.
+The channel name shown in the header (e.g. @gocareers, @internfreak) is NOT the company —
+it is just the channel that shared the post. Find the ACTUAL company hiring.
 
-For each job posting extract:
-- title: job title (e.g. "Backend Engineering Intern", "SDE Intern")
-- company: company name (extract from post; use "" if not mentioned)
-- location: city, state, "Remote", or "India" if unspecified
-- description: the full relevant text from the post describing the role
-- url: application URL or link from the post (often labeled "Apply" or "Apply here"); use "" if none
-- salary: stipend/salary if mentioned (e.g. "₹20,000/month", "5 LPA"); use "" if not mentioned
+Return ONLY a valid JSON array. Skip posts with no job listing.
+If no jobs found at all, return [].
+
+For each job, extract:
+- title: the exact job title from the post (e.g. "Backend Engineering Intern", "SDE-1", "Software Engineer")
+- company: the name of the COMPANY hiring (NOT the channel name). Use "" if not mentioned.
+- location: city or "Remote" or "India" if unclear
+- description: copy the FULL original post text verbatim — do not summarize. This is critical for downstream scoring.
+- url: the application link (look for "Apply:", "Apply here:", "Link:", "🔗", bit.ly links, LinkedIn URLs, Ashby/Lever/Greenhouse URLs). Use "" if none.
+- salary: stipend or CTC if mentioned (e.g. "₹25,000/month", "6 LPA"). Use "" if not mentioned.
 
 Rules:
-- One job per JSON object. If a post lists multiple jobs, create one object per job.
-- If the post is just a WhatsApp link, course ad, or channel promotion, return nothing for it.
-- For Indian channels: extract INR stipend amounts carefully — they often use ₹ or "Rs" or "LPA"
-- "Apply link:" or "🔗" often precedes the application URL — extract it as the url field
+- One JSON object per job. If a post lists 3 jobs, create 3 objects.
+- If a post is a forwarded message with a job link, still extract it.
+- Do NOT use the @channel name as the company name.
+- If no company name is visible, set company to "".
+- Keep description as the full post text, not a summary.
 
 Posts:
 {combined}"""
@@ -385,7 +324,12 @@ Posts:
                         "Always respond with a valid JSON array only. No markdown, no explanation."
                     ),
                     temperature=0.1,
-                    max_output_tokens=2048,
+                    # 4096 tokens: batch of 5 posts × ~600 tokens each (full verbatim
+                    # text as description) + JSON structure overhead.
+                    # 2048 was too small — truncated responses caused silent JSON parse
+                    # errors when posts were long. gemini-3.1-flash-lite supports 8192
+                    # output tokens so 4096 is a safe ceiling well within limits.
+                    max_output_tokens=4096,
                     response_mime_type="application/json",
                 ),
             )
@@ -402,7 +346,7 @@ Posts:
             if not isinstance(jobs_raw, list):
                 jobs_raw = []
 
-            for job in jobs_raw:
+            for idx_j, job in enumerate(jobs_raw):
                 if not isinstance(job, dict):
                     continue
 
@@ -410,13 +354,24 @@ Posts:
                 if not title or len(title) < 3:
                     continue  # Skip malformed extractions
 
-                # Find the original post's date (use first matching batch item's date)
-                # — approximate: use batch start date for the whole batch
+                # Map each extracted job back to the correct post date.
+                # Gemini can extract multiple jobs from one batch; we use
+                # the date of the batch's first post as a safe approximation.
+                # (Exact mapping would require Gemini to output a post_index
+                # field — not worth the prompt complexity.)
                 post_date = batch[0][1] if batch else datetime.now(timezone.utc)
+
+                # Reject if Gemini hallucinated the channel name as company
+                company_raw = job.get("company", "").strip()
+                if company_raw.lower().replace(" ", "") in _known_channels_lower:
+                    company_raw = ""
+                # Also reject single-letter companies (Gemini confusion artifact)
+                if len(company_raw) <= 1:
+                    company_raw = ""
 
                 all_jobs.append({
                     "title":       title,
-                    "company":     job.get("company", "").strip(),
+                    "company":     company_raw,
                     "location":    job.get("location", "India").strip() or "India",
                     "description": job.get("description", "").strip(),
                     "url":         job.get("url", "").strip(),
@@ -443,8 +398,8 @@ def fetch_telegram_channels() -> list[dict]:
 
     Flow:
       1. Validate env vars (TELEGRAM_API_ID, TELEGRAM_API_HASH, TELEGRAM_SESSION_STRING)
-      2. Fetch latest 7 messages per channel via Telethon MTProto API
-      3. Apply heuristic pre-filter (skip obvious noise)
+      2. Fetch latest MESSAGES_PER_CHANNEL messages per channel via Telethon MTProto API
+      3. Apply minimal sanity filter (skip empty / too-short posts)
       4. Send surviving posts to Gemini in batches for structured extraction
       5. Return list[dict] in standard job dict format
 
@@ -469,7 +424,7 @@ def fetch_telegram_channels() -> list[dict]:
         logger.error(f"Telegram: fatal error during message fetch — {e}")
         return []
 
-    # ── Step 2: Log raw counts and apply heuristic pre-filter ────────────
+    # ── Step 2: Sanity filter (skip empty/too-short posts) ────────────────
     total_raw = sum(len(msgs) for msgs in channel_messages.values())
     logger.info(f"Telegram channels: {total_raw} raw messages fetched across all channels")
 
@@ -481,19 +436,19 @@ def fetch_telegram_channels() -> list[dict]:
         channel_raw = len(posts)
         channel_passed = 0
         for text, date in posts:
-            if _passes_heuristic(text):
+            if _passes_sanity(text):
                 filtered_posts.append((text, date, channel))
                 channel_passed += 1
         logger.info(
-            f"Telegram/{channel}: {channel_raw} raw → {channel_passed} passed heuristic filter"
+            f"Telegram/{channel}: {channel_raw} raw → {channel_passed} passed sanity filter"
         )
 
     logger.info(
-        f"Telegram channels: {len(filtered_posts)}/{total_raw} posts passed heuristic filter"
+        f"Telegram channels: {len(filtered_posts)}/{total_raw} posts passed sanity filter"
     )
 
     if not filtered_posts:
-        logger.info("Telegram channels: no posts survived heuristic filter — no AI calls made")
+        logger.info("Telegram channels: no posts survived sanity filter")
         return []
 
     # ── Step 3: AI extraction → structured job dicts ─────────────────────

@@ -133,6 +133,10 @@ _DEFAULT_WEIGHTS: dict = {
     "source_naukri_stub_penalty":       -1,
     "source_naukri_stub_threshold":      150,
     "source_serper_penalty":            -1,
+    # Telegram channels: curated Indian job posts, high signal but short
+    # descriptions — needs a boost so they're not buried by ATS jobs
+    # with long keyword-rich JDs that score higher on skill density.
+    "source_telegram_boost":             3,
     "source_workday_bonus":              2,   # Workday companies are curated ATS employers (Cisco, Adobe, etc.)
 }
 
@@ -808,6 +812,7 @@ def _source_adjustment(job: dict, w: dict) -> tuple[int, list[str]]:
       naukri + stub description     → w["source_naukri_stub_penalty"]       (−1)
       serper                        → w["source_serper_penalty"]            (−1)
       workday                       → w["source_workday_bonus"]             (+2)
+      telegram_channels             → w["source_telegram_boost"]            (+3)
     """
     delta   = 0
     reasons = []
@@ -866,6 +871,15 @@ def _source_adjustment(job: dict, w: dict) -> tuple[int, list[str]]:
         b = w.get("source_workday_bonus", 2)
         delta += b
         reasons.append(f"workday-curated({b:+})")
+
+    # ── Telegram channels: high-signal Indian job posts, short descriptions ──
+    # These arrive with thin descriptions (2-4 sentences from Telegram posts)
+    # vs ATS jobs with 500-1500 word JDs, causing skill-density scoring to
+    # systematically underrank them. This boost corrects that structural bias.
+    if source == "telegram_channels":
+        b = w.get("source_telegram_boost", 3)
+        delta += b
+        reasons.append(f"telegram-high-signal({b:+})")
 
     return delta, reasons
 
