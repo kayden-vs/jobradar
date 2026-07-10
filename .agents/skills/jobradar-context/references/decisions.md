@@ -1,6 +1,23 @@
 # JobRadar — Architecture Decision Records
 
-> Last updated: 2026-07-08
+> Last updated: 2026-07-11
+
+---
+
+## ADR-014: Remove Telegram Heuristic Pre-Filter; Add Source-Level Ranker Boost
+
+**Date**: 2026-07-10
+**Decision**: Remove the two-gate keyword heuristic pre-filter from `sources/telegram_channels.py` and replace with a minimal sanity check (40-char minimum). Add a `+3` source-level ranker offset for `telegram_channels` in `pipeline/ranker.py`.
+**Context**: After deploying the Telegram source, zero Telegram jobs were ever scoring ≥7. Log analysis (v6_ec2run.log) revealed 5 compounding bugs: (1) the heuristic was dropping 80% of real posts, (2) Gemini was using the channel name as the company name, (3) descriptions were being summarised instead of kept verbatim, (4) `max_output_tokens=2048` was too small for full-text batch responses, (5) Telegram jobs had no source-level ranker boost so they sank below the 150-job AI cap cutoff against ATS jobs with long keyword-rich JDs.
+**Rationale**:
+- The heuristic's `_JOB_INTENT_KEYWORDS` and `_TECH_ROLE_KEYWORDS` gates were designed for English ATS phrasing. Indian Telegram channels use phrasing like `"applications open"`, `"batch 2025/26 eligible"`, `"drive"`, `"positions available"` — none of which matched. Channels like `@dot_aware`, `@fresheroffcampus`, `@CSE_IT_BCA_MCA_Computer_Jobs` were getting 0/7 posts through.
+- The downstream prefilter (`prefilter.py`) and AI scorer already handle noise correctly — prefilter rejects off-topic posts via role/experience/location rules; the scorer gives 1-2/10 to genuine noise. There is nothing to protect by running a heuristic before Gemini for this source.
+- The `+3` source boost mirrors the existing Workday `+2` bonus rationale: structurally thin data (short Telegram posts vs long ATS JDs) systematically depresses skill-density scores through no fault of the job quality. The boost corrects the structural bias without affecting relative ranking within the source.
+- Gemini `max_output_tokens=4096` is well within the model's 8192 output token limit. The 2048 ceiling was causing silent JSON truncation (silently caught as `JSONDecodeError` → batch dropped).
+**Alternatives considered**:
+- Improve the heuristic keywords: fragile — Indian channels change phrasing frequently and the heuristic maintenance burden is high for a source with only 63 messages/run.
+- Raise the AI cap (`max_ai_jobs_per_run`) instead of a source boost: would increase scorer cost proportionally across all sources, not just Telegram.
+**Impact**: 63/63 posts now pass to Gemini (was 19/63). ~56 jobs extracted per run (was ~12). Per-source observability added to `prefilter.py` and `ranker.py` logs to monitor survival rate going forward.
 
 ---
 

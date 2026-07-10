@@ -101,6 +101,9 @@ _CLOSED_PHRASES = re.compile(
 
 # Non-job content — exam prep, govt notifications, question papers that leak
 # through from broad RSS feeds (particularly freshersnow.com root /feed/).
+# Also catches Gemini extraction artifacts from telegram_channels source
+# where the channel attribution header gets parsed as the job title
+# (e.g. "Go Careers – Telegram", "Jobs via Telegram").
 _NON_JOB_CONTENT_RE = re.compile(
     r'question\s+paper[s]?'
     r'|previous\s+paper[s]?'
@@ -119,7 +122,10 @@ _NON_JOB_CONTENT_RE = re.compile(
     r'|railway\s+(?:group|recruitment|loco)'
     r'|fireman\s+'
     r'|\bpsc\s+'
-    r'|horticulture\s+officer',
+    r'|horticulture\s+officer'
+    # Telegram extraction artifacts: channel name used as job title
+    r'|[\u2013\u2014\-]\s*telegram\s*$'   # "Go Careers – Telegram" / "Jobs - Telegram"
+    r'|^go\s+careers\s*[\u2013\u2014\-]',  # "Go Careers – ..."
     re.IGNORECASE,
 )
 
@@ -672,12 +678,17 @@ def prefilter(jobs: list[dict], profile: dict) -> list[dict]:
 
     passed = []
     company_counts: dict[str, int] = {}  # tracks ATS jobs per company
+    source_counts: dict[str, tuple[int, int]] = {}  # source -> (total, passed)
 
     for job in jobs:
         title       = job.get("title", "")
         company     = job.get("company", "")
         description = job.get("description", "")
         source      = job.get("source", "")
+
+        # Track per-source totals
+        s_total, s_pass = source_counts.get(source, (0, 0))
+        source_counts[source] = (s_total + 1, s_pass)
 
         checks = [
             # ── Structural (cheapest) ─────────────────────────────────────
@@ -711,6 +722,10 @@ def prefilter(jobs: list[dict], profile: dict) -> list[dict]:
         if rejected:
             continue
 
+        # Track per-source pass count
+        s_total, s_pass = source_counts.get(source, (0, 0))
+        source_counts[source] = (s_total, s_pass + 1)
+
         # ── Per-company safety ceiling (ATS only) ────────────────────────────
         # High ceiling (default 100) — only prevents extreme single-company floods.
         # The real per-company cap (ats_per_company_cap=25) runs POST-ranking
@@ -736,4 +751,16 @@ def prefilter(jobs: list[dict], profile: dict) -> list[dict]:
         )
 
     logger.info(f"Pre-filter: {len(jobs)} jobs -> {len(passed)} passed (sent to AI scorer)")
+
+    # Per-source survival stats — useful for diagnosing suppression of specific sources
+    # (e.g. telegram_channels arriving with thin descriptions may drop here).
+    key_sources = {"telegram_channels", "naukri", "internshala", "freshers_blogs",
+                   "serper", "hiringcafe", "ats", "workday", "yc"}
+    for src, (total, n_passed) in sorted(source_counts.items()):
+        if total > 0 and (src in key_sources or n_passed == 0):
+            pct = int(100 * n_passed / total)
+            logger.info(
+                f"Pre-filter [{src}]: {total} in -> {n_passed} passed ({pct}%)"
+            )
+
     return passed

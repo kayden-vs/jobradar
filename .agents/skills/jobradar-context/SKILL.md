@@ -7,7 +7,7 @@ description: Complete context for the JobRadar automated job discovery pipeline 
 
 ## What is JobRadar?
 
-JobRadar is a **fully automated job discovery pipeline** built in Python. It aggregates jobs from 16 sources (ATS APIs, job boards, RSS feeds, Google dorking), deduplicates across runs, filters with zero-cost heuristic rules, ranks by relevance, scores the top candidates with AI (Google Gemini), and delivers urgent matches via Telegram. Built for freshers/interns but fully configurable for any role via `profile.yaml`.
+JobRadar is a **fully automated job discovery pipeline** built in Python. It aggregates jobs from 17 sources (ATS APIs, job boards, RSS feeds, Google dorking, Telegram channels), deduplicates across runs, filters with zero-cost heuristic rules, ranks by relevance, scores the top candidates with AI (Google Gemini), and delivers urgent matches via Telegram. Built for freshers/interns but fully configurable for any role via `profile.yaml`.
 
 ## Tech Stack
 
@@ -48,6 +48,7 @@ jobradar/
 │   ├── cutshort.py          # Cutshort.io (disabled: public API unreliable)
 │   ├── instahyre.py         # Instahyre (disabled: API 404)
 │   ├── wellfound.py         # Wellfound (disabled: blocks bots)
+│   ├── telegram_channels.py # Telegram job channels via Telethon MTProto (9 curated Indian channels)
 │   └── utils.py             # Shared source utilities
 │
 ├── pipeline/                # Processing stages (order matters)
@@ -78,25 +79,25 @@ jobradar/
 ## Pipeline Flow
 
 ```
-16 Sources (concurrent) → ~8,000–9,000 raw jobs
+16 Sources (concurrent) → ~8,000–9,500 raw jobs
          ↓
-Dual-Hash Deduplication → ~600–800 new jobs
+Dual-Hash Deduplication → ~600–900 new jobs
          ↓
-Rule-Based Pre-Filter (drops ~90–95%) → ~50–150 eligible
+Rule-Based Pre-Filter (drops ~90–95%) → ~600–700 eligible
          ↓
 6-Layer Heuristic Ranker (sorts best-first) → same count, reordered
          ↓
-AI Scorer (Gemini 2.5 Flash, up to 130 jobs/run) → score 1–10
+AI Scorer (Gemini flash-lite, up to 150 jobs/run) → score 1–10
          ↓
 Score ≥8 → Telegram push  |  Score 6–7 → Session digest  |  Score <6 → DB only
 ```
 
 ## Current State (as of July 2026)
 
-**Working sources (12)**: ATS (10 platforms), Workday, Naukri, YC, Internshala, freshers_blogs, Serper, HN, hiring.cafe, Jobicy, RemoteOK
+**Working sources (13)**: ATS (10 platforms), Workday, Naukri, YC, Internshala, freshers_blogs, Serper, HN, hiring.cafe, Jobicy, RemoteOK, **telegram_channels (9 Indian channels)**
 **Disabled sources (5)**: Cutshort (broken API), Instahyre (API 404), Wellfound (bot blocking), Reddit (wrong content), Hirist (untested/TODO)
 **Deployment**: EC2 t2.micro, auto-starts via EventBridge schedule, runs pipeline, then auto-shuts down
-**Recent focus**: Gemini migration (branch: feat/gemini-scorer — not yet merged), scorer calibration fix, ranker v3
+**Recent focus**: Telegram source pipeline fixes (heuristic removal, Gemini prompt fix, ranker boost +3, per-source observability logs in prefilter/ranker)
 
 ## Key Numbers
 
@@ -105,7 +106,7 @@ Score ≥8 → Telegram push  |  Score 6–7 → Session digest  |  Score <6 →
 | Gemini model | gemini-3.1-flash-lite (GA, May 2026, 15 RPM / ~1,500 RPD) |
 | Token budget/run | None (Gemini ~1.5M TPD — no per-run ceiling) |
 | Request interval | 4.5s (~13.3 req/min, under ~15 RPM, well under ~250K TPM) |
-| Max AI jobs/run | 130 (all scored — no budget-based skipping) |
+| Max AI jobs/run | 150 (all scored — no budget-based skipping) |
 | JD description limit | 6,000 chars (was 3,000 with Groq) |
 | Serper budget | 25 queries/run (of 2,500/month free) |
 | Pipeline duration | ~20–22 minutes total |

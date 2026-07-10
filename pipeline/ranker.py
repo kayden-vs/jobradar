@@ -1220,8 +1220,35 @@ def rank_eligible_jobs(
     # Log score distribution stats (NEW v2)
     # Attempt to get AI cap from profile for cutoff reporting
     ai_cap = None
+    cutoff_score = None
     if profile:
         ai_cap = profile.get("hard_reject", {}).get("max_ai_jobs_per_run")
+    if ai_cap and len(jobs) > ai_cap:
+        sorted_scores = sorted((j["_heuristic_score"] for j in jobs), reverse=True)
+        cutoff_score = sorted_scores[ai_cap - 1]  # lowest score that makes the cut
     _log_score_distribution(jobs, ai_cap)
+
+    # Per-source score stats: shows if telegram_channels / freshers_blogs are
+    # competitive enough to survive the AI cap cutoff. Key sources only.
+    key_sources = {"telegram_channels", "naukri", "internshala", "freshers_blogs",
+                   "serper", "hiringcafe", "workday"}
+    from collections import defaultdict
+    source_scores: dict[str, list[int]] = defaultdict(list)
+    for j in jobs:
+        src = j.get("source", "other")
+        source_scores[src].append(j["_heuristic_score"])
+
+    source_summary_parts = []
+    for src in sorted(source_scores):
+        if src not in key_sources and src != "other":
+            continue
+        scores_list = source_scores[src]
+        med = sorted(scores_list)[len(scores_list) // 2]
+        mx  = max(scores_list)
+        above_cut = sum(1 for s in scores_list if cutoff_score is not None and s >= cutoff_score)
+        cut_str = f" {above_cut}/{len(scores_list)}≥cut" if cutoff_score is not None else ""
+        source_summary_parts.append(f"{src}(med={med} max={mx}{cut_str})")
+    if source_summary_parts:
+        logger.info("Ranker per-source: " + " | ".join(source_summary_parts))
 
     return jobs

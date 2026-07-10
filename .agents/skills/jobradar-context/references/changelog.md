@@ -4,6 +4,33 @@
 
 ---
 
+## [2026-07-11] Add per-source observability to prefilter and ranker
+**What**: Added per-source survival stats to `pipeline/prefilter.py` (logs `telegram_channels: N in -> M passed (X%)` for key sources after each run) and per-source score distribution to `pipeline/ranker.py` (logs median/max ranker score per source and how many jobs survive the AI cap cutoff). Also added Telegram artifact title rejection to `_NON_JOB_CONTENT_RE` — titles like `"Go Careers – Telegram"` (Gemini hallucinating channel header as job title) now get rejected by prefilter instead of wasting a scorer call.
+**Why**: Without per-source logging there was no way to tell if `telegram_channels` jobs were being filtered or ranked out. The new log lines definitively answer "are Telegram jobs reaching the scorer?" on every run.
+**Files**: `pipeline/prefilter.py`, `pipeline/ranker.py`
+**Status**: Complete
+
+---
+
+## [2026-07-11] Fix Gemini output token limit and channel-name-as-company hallucination
+**What**: (1) Raised `max_output_tokens` from 2048 → 4096 in `sources/telegram_channels.py` — the new prompt requests full verbatim post text as `description`, which can push 5-post batch output past 2048 tokens, causing silent JSON truncation. (2) Moved `_known_channels_lower` set construction outside the inner job loop (was being rebuilt on every extracted job). (3) Updated `pipeline/gemini_throttle.py` comment to reflect 3-caller math (HN + Telegram + scorer = ~175 calls/run = ~350 RPD).
+**Why**: Silent JSON truncation caused entire Telegram batches to be silently lost with only a WARNING log. 
+**Files**: `sources/telegram_channels.py`, `pipeline/gemini_throttle.py`
+**Status**: Complete
+
+---
+
+## [2026-07-10] Fix Telegram pipeline: remove heuristic, fix Gemini prompt, add ranker boost
+**What**: Three root-cause fixes for Telegram jobs never reaching high scores:
+1. **Removed two-gate heuristic pre-filter** in `sources/telegram_channels.py` — replaced with `_passes_sanity()` (40-char minimum only). The heuristic blocked 80% of real posts because Indian Telegram phrasing (`"applications open"`, `"batch 2025"`, `"drive"`) didn't match hard-coded English keywords. Now 63/63 posts pass → 56 jobs extracted (was 19/63 → ~12).
+2. **Fixed Gemini extraction prompt** — explicit instruction that the channel name in the post header is NOT the company. Added post-extraction validation rejecting single-letter company names and company names matching known channel names. Prompt now requests full verbatim post text as `description` instead of a summary.
+3. **Added `telegram_channels` to ranker Layer 5 source-aware offsets** (`source_telegram_boost: +3`). Indian Telegram posts have 2–4 sentence descriptions vs ATS jobs' 500–1500 word JDs — the ranker's skill-density layer was systematically underranking them.
+**Why**: All three bugs combined caused high-quality Telegram jobs to either never be extracted, extracted as garbage, or ranked below the AI cap cutoff. Zero Telegram jobs ever scored ≥7 before this fix.
+**Files**: `sources/telegram_channels.py`, `pipeline/ranker.py`
+**Status**: Complete
+
+---
+
 ## [2026-07-09] Consolidate to single DB: profile.db
 **What**: Merged all 353 historical jobs from `data/jobradar.db` into `data/profile.db` using column-aware `INSERT OR IGNORE` (349 inserted, 4 true duplicates skipped — final count 420 jobs). Changed `_DEFAULT_DB_PATH` in `storage/db.py` from `"data/jobradar.db"` to `"data/profile.db"`. Deleted `data/jobradar.db`, `data/jobradar_copy.db`, and empty `data/rohit.db`. Updated all `jobradar.db` references in `docs/jobradar_guide.md` and `docs/implementation_guide.md`.
 **Why**: Two separate DB files (`jobradar.db` from the old hardcoded default, `profile.db` from the per-profile naming scheme) were confusing and caused data to be split across files. Now there is exactly one DB file: `data/profile.db`. The only code change was one line in `storage/db.py`.
