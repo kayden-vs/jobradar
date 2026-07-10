@@ -74,6 +74,7 @@ greenhouse:
   - planetscale
   - newton
   - stage
+  - stripe
 
 # Greenhouse EU — endpoint: boards.eu.greenhouse.io/v1/boards/{SLUG}/jobs?content=true
 # Companies that use the European Greenhouse instance
