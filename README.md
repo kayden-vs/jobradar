@@ -1,7 +1,7 @@
 <div align="center">
   <img src="docs/jobradar_logo.png" alt="JobRadar Logo" width="200"/>
   <h1>JobRadar</h1>
-  <p><strong>Your personal job-hunting agent — filters the noise, scores with AI, and delivers the best jobs straight to your Telegram.</strong></p>
+  <p><strong>Pulls jobs from 17 sources, scores them with AI, drops the irrelevant ones, and pings you on Telegram with what's actually worth applying to.</strong></p>
 </div>
 
 <p align="center">
@@ -14,12 +14,22 @@
 
 ---
 
-JobRadar aggregates **17 job sources**, eliminates noise with zero-cost rule-based filters, deduplicates across runs, ranks by relevance, scores with AI, and delivers priority alerts straight to **Telegram** — twice daily, entirely on free-tier APIs.
+The good jobs are never where you'd expect. They're in a Telegram channel with 40 members, buried on some startup's own `/careers` page, or hiding behind a Google Form that no job board ever indexed. By the time they show up on LinkedIn, they're already closed.
 
-Built for freshers, interns, and early-career developers. But **fully configurable for any role, stack, domain, or location via `profile.yaml` alone** — no code changes needed whether you're a cybersecurity candidate, a data engineer, or a mobile developer.
+JobRadar polls 17 sources twice a day, pulls ~9,000 raw listings, throws away the 95% that don't matter, AI-scores the rest, and sends the winners to your Telegram. The whole thing runs on free-tier APIs.
+
+It's tuned for freshers and early-career devs out of the box, but everything it looks for (skills, industries, project signals) comes from your `profile.yaml`. Change the file, and the entire pipeline adapts. No code changes.
+
+> I built this while looking for my first backend role. The morning routine was always the same: open six tabs, scroll through the same stale listings, maybe find something good that closed two days ago. The jobs worth applying to were never on page one of anything. They were on some startup's careers page, or in a Telegram channel with 200 people, gone before I even knew to look. I got tired of being the bottleneck in my own job search, so I automated it.
+
+<div align="center">
+  <img src="docs/telegram_ss.jpg" width="260" alt="A JobRadar Telegram alert showing an AI-scored job match"/>
+  <br/>
+  <sub><i>What actually shows up in Telegram when it finds something worth your time.</i></sub>
+</div>
 
 > [!TIP]
-> **New here?** Read [`docs/setup_guide.md`](docs/setup_guide.md) first — it walks you through getting everything running from scratch.
+> **New here?** Start with [`docs/setup_guide.md`](docs/setup_guide.md). It covers everything from API keys to your first run.
 
 ---
 
@@ -44,19 +54,6 @@ Built for freshers, interns, and early-career developers. But **fully configurab
 ---
 
 ## 🔄 How It Works
-
-<table>
-<tr>
-<td valign="top" width="260">
-
-**What lands in your Telegram:**
-
-<img src="docs/telegram_ss.jpg" width="240" alt="Telegram alerts showing matched jobs with AI scores, highlights, and apply links"/>
-
-Urgent alerts fire the moment a high-scoring job is found. Every run ends with a session summary card.
-
-</td>
-<td valign="top">
 
 ```
 ┌─────────────────────────────────────────────────┐
@@ -89,9 +86,9 @@ Urgent alerts fire the moment a high-scoring job is found. Every run ends with a
                          │ ranked, best-first
                          ▼
 ┌─────────────────────────────────────────────────┐
-│     AI Scorer — Gemini 3.1 Flash-Lite             │
-│  Native JSON mode · 4.5s throttle (~13 RPM)    │
-│  130 jobs/run · few-shot calibrated 1–10 scale │
+│     AI Scorer — Gemini 3.1 Flash-Lite           │
+│  Native JSON mode · 4.5s throttle (~13 RPM)     │
+│  130 jobs/run · few-shot calibrated 1–10 scale  │
 └────────────────────────┬────────────────────────┘
                          │
          ┌───────────────┴───────────────┐
@@ -100,17 +97,13 @@ Urgent alerts fire the moment a high-scoring job is found. Every run ends with a
  Instant Telegram push         Session summary card
 ```
 
-</td>
-</tr>
-</table>
-
 ---
 
 ## ✨ Features
 
 ### 🔌 17 Job Sources
 
-**Structured ATS APIs** — direct structured API polling of 10 platforms, no scraping, no JS rendering:
+**Structured ATS APIs** - direct API polling of 10 platforms. No scraping, no headless browser, no JS rendering:
 
 | Platform | Example Companies | Notes |
 |---|---|---|
@@ -126,7 +119,7 @@ Urgent alerts fire the moment a high-scoring job is found. Every run ends with a
 | **Personio** | Open Financial, Amazon, Basecamp | Public XML feed, no auth |
 | **Workday** | Adobe, Samsung, BrowserStack, Cisco, Sprinklr | POST-based API with lazy JD fetch; requires pre-discovered tenant/server/site |
 
-All companies are listed in `companies.yaml`. Per-company caps prevent any single large company from dominating the scoring budget.
+All companies live in `companies.yaml`. There's a per-company cap so a single large org (looking at you, GitLab with 300+ open roles) doesn't eat up the entire scoring budget.
 
 **Additional sources:**
 
@@ -135,20 +128,20 @@ All companies are listed in `companies.yaml`. Per-company caps prevent any singl
 | **Naukri.com** | India's largest job board. 10 keywords × 3 locations × 2 pages = up to 1,200 raw cards per run; Stage-1 filters applied inline |
 | **Hirist.tech** | India-specific niche tech board targeting backend, Go, Python, and TypeScript roles |
 | **Y Combinator Jobs** | Two-phase scraper (card listing → full JD). High-signal for early-stage startups globally |
-| **Internshala** | India's #1 internship platform. Optimised plain-HTTP parser — bypasses browser overhead entirely |
-| **Fresher Blogs RSS** | 8+ Indian fresher blogs via concurrent `ThreadPoolExecutor`. Lazy JD fetch — full pages fetched only after a job survives prefilter |
+| **Internshala** | India's #1 internship platform. Optimised plain-HTTP parser, bypasses browser overhead entirely |
+| **Fresher Blogs RSS** | 8+ Indian fresher blogs via concurrent `ThreadPoolExecutor`. Lazy JD fetch, full pages only fetched after a job survives prefilter |
 | **Serper.dev** | Tiered Google dork discovery focused exclusively on what ATS APIs can't find: custom `/careers` pages, hidden applications (Forms, Notion), India-specific ATS |
-| **HackerNews "Who is Hiring?"** | Parses monthly HN thread via Algolia API. Self-healing auto-discovery — no manual thread ID updates ever needed |
+| **HackerNews "Who is Hiring?"** | Parses monthly HN thread via Algolia API. Auto-discovers the latest thread, no manual updates needed |
 | **Reddit Job Feeds** | r/cscareerquestions, r/IndiaJobs, and related subreddits via RSS |
 | **Jobicy / RemoteOK** | Remote jobs JSON APIs. Good for catching remote-first companies open to India timezone candidates |
-| **hiring.cafe** | Aggregated ATS jobs via internal Next.js API. Rich structured data — server-side filtered by seniority, department, location. ~50 high-signal jobs per run |
-| **Telegram Channels** | 9 curated Indian job channels via **Telethon MTProto API** — reads messages as structured objects, immune to frontend changes. Channels: `@dot_aware` · `@internfreak` · `@getjobss` · `@fresheroffcampus` · `@jobsandinternshipsupdates` · `@CSE_IT_BCA_MCA_Computer_Jobs` · `@jobsinternshipswale` · `@jobsandinternshipsindia` · `@gocareers`. Posts parsed by Gemini AI into structured job dicts. Requires one-time setup — see [Quick Start → Step 3](#3-optional-telegram-channels-source). |
+| **hiring.cafe** | Aggregated ATS jobs via internal Next.js API. Server-side filtered by seniority, department, location. ~50 high-signal jobs per run |
+| **Telegram Channels** | 9 curated Indian job channels via **Telethon MTProto API**. Reads messages as structured objects, won't break when Telegram changes their UI. Channels: `@dot_aware` · `@internfreak` · `@getjobss` · `@fresheroffcampus` · `@jobsandinternshipsupdates` · `@CSE_IT_BCA_MCA_Computer_Jobs` · `@jobsinternshipswale` · `@jobsandinternshipsindia` · `@gocareers`. Posts parsed by Gemini AI into structured job dicts. One-time setup required, see [Quick Start → Step 3](#3-optional-telegram-channels-source). |
 
 ---
 
 ### 🛡️ Smart Pre-Filter
 
-Drops **~90–95%** of listings before any AI call — each check is pure Python, zero network cost:
+This is where most of the cost savings happen. Pure Python, no API calls, no network requests. Kills **~90-95%** of listings before any AI ever sees them:
 
 | Check | What it catches |
 |---|---|
@@ -156,19 +149,19 @@ Drops **~90–95%** of listings before any AI call — each check is pure Python
 | **Expiry signals** | Title/description regex for "application closed", "position filled", "last date: [past date]", etc. |
 | **ATS title allowlist** | ATS titles must contain a recognised tech signal (engineer, backend, golang, intern, etc.) |
 | **ATS location filter** | Instantly rejects US/UK/EU structured location fields; passes India/Remote/ambiguous |
-| **RSS tag filter** | Zero-cost intersection check on experience, batch, and location tags from RSS metadata — no page fetches needed |
+| **RSS tag filter** | Zero-cost intersection check on experience, batch, and location tags from RSS metadata. No page fetches needed |
 | **Experience keyword scan** | Hard rejects descriptions containing "2+ years", "senior engineer", "tech lead", etc. |
 | **Location description scan** | Rejects jobs explicitly requiring on-site in non-India geographies |
 | **Company/role blacklists** | Configurable lists in `profile.yaml` |
-| **ATS company cap** | Max N jobs per company per run (default 25) — prevents GitLab/Stripe dominating the pool |
+| **ATS company cap** | Max N jobs per company per run (default 25) so one large org doesn't eat the whole scoring budget |
 
 ---
 
 ### 🏆 Heuristic Relevance Ranker
 
-Before any AI call, every eligible job gets a fast Python relevance score that determines the order in which jobs enter the AI scorer — so the token budget is spent on the strongest matches first.
+Before anything hits the AI, every surviving job gets a quick relevance score in pure Python. This decides the order jobs enter the scorer, so the best-looking matches get scored first and the budget isn't wasted on garbage.
 
-**Fully profile-driven** — all detection patterns (skills, domains, project signals, synergy combos) are compiled dynamically from `profile.yaml` at runtime. A cybersecurity candidate who updates their skills and industries gets correct ranking immediately, with no code changes.
+The ranker builds all its detection patterns from `profile.yaml` at startup. If you switch from backend to cybersecurity, just update your skills and industries in the config. The ranker picks it up on the next run, no code changes.
 
 **Three scoring layers:**
 
@@ -179,7 +172,7 @@ Before any AI call, every eligible job gets a fast Python relevance score that d
 | **Layer 3 — Source offsets** | Internshala with stipend ≥ ₹10k (+2), fresher blog batch tag match (+1), Naukri stub desc (−1), Serper dork result (−1) |
 
 > [!NOTE]
-> Jobs with no `posted_at` date are **not penalised** — they compete on skill/role signals alone. This avoids silently dropping good jobs that don't expose a date (common with Naukri and some ATS endpoints).
+> Jobs with no `posted_at` date are **not penalised**. They compete on skill/role signals alone. This avoids silently dropping good jobs that don't expose a date (common with Naukri and some ATS endpoints).
 
 All numeric weights are configurable in `profile.yaml → ranker_weights:` without touching code.
 
@@ -187,7 +180,7 @@ All numeric weights are configurable in `profile.yaml → ranker_weights:` witho
 
 ### 🤖 AI Scorer
 
-**Model**: `gemini-3.1-flash-lite` via Google Gemini free tier (Google AI Studio). GA stable model released May 2026, optimised for high-volume tasks. Supports JSON mode cleanly.
+**Model**: `gemini-3.1-flash-lite` on Google's free tier (AI Studio). It's the lite variant, fast enough for bulk scoring and the free tier is generous enough that you'll never hit a wall with normal usage.
 
 **Rate limiting:**
 
@@ -197,12 +190,12 @@ All numeric weights are configurable in `profile.yaml → ranker_weights:` witho
 | TPM | Effectively none | Gemini free tier: ~1,000,000 TPM — no bottleneck |
 | Daily ceiling | `max_ai_jobs_per_run` | 130 jobs max (all scored — no token budget gate needed) |
 
-**Key features:**
-- **5-point few-shot calibration** — score anchors at 9, 7, 6, 5, and 3 anchor the full useful decision range
-- **Mandatory score reasons** — ALL scores (including <6) include a 1-2 sentence reason for debugging
-- **Native JSON mode** via `response_mime_type="application/json"` — guaranteed JSON, no markdown fence stripping
-- **Pre-Gemini expiry scan** — scans the full description for closure signals before making any AI call
-- **6,000 char JD limit** — double the old Groq limit (3,000 chars); better context for long JDs
+**Worth knowing:**
+- **Few-shot calibration** with 5 anchor examples (scores 9, 7, 6, 5, 3) so the model has concrete reference points instead of vibing
+- **Every score comes with a reason**, even the low ones. Makes it easy to spot when the AI is being dumb
+- **Native JSON mode** (`response_mime_type="application/json"`) so you never get markdown-wrapped JSON back
+- **Pre-AI expiry check** scans the description for "position filled" / "applications closed" before wasting an API call
+- **6,000 char JD limit** (up from 3,000 when this used Groq). Longer context = better scoring for detailed JDs
 
 **Score buckets:**
 
@@ -217,7 +210,7 @@ All numeric weights are configurable in `profile.yaml → ranker_weights:` witho
 
 ### 🔗 Multi-Key Deduplication
 
-Never see the same job twice across sources or runs:
+When you're pulling from 17 sources, the same job shows up a lot. This handles it:
 
 - **Hash 1 — Normalised Title+Company+Location MD5** — collapses `Pvt Ltd` / `Private Limited` / `Inc.`, city aliases (`Bengaluru → bangalore`), year noise in titles, and whitespace
 - **Hash 2 — Canonical URL MD5** — strips `utm_*`, `ref`, `source`, and other tracking parameters
@@ -288,7 +281,7 @@ jobradar/
 ## 🚀 Quick Start
 
 > [!NOTE]
-> The steps below are a condensed quick-start. For the full walkthrough — API keys, `profile.yaml` field reference, Naukri config, ranker weights, and troubleshooting — see **[`docs/setup_guide.md`](docs/setup_guide.md)**.
+> This is the short version. For the full walkthrough (API keys, `profile.yaml` reference, Naukri config, ranker weights, troubleshooting), see **[`docs/setup_guide.md`](docs/setup_guide.md)**.
 
 ### 1. Clone & Install
 
@@ -310,9 +303,9 @@ TELEGRAM_CHAT_ID=987654321
 
 ### 3. *(Optional)* Telegram Channels Source
 
-Skip this step if you don't plan to use the Telegram channels source. If you do, it requires a one-time interactive login to generate a session string — after which all runs (including on EC2) are fully headless.
+Skip this if you don't care about Telegram channel sources. If you do want them, there's a one-time login step, and after that everything runs headless (works fine on EC2).
 
-**Why MTProto instead of scraping?** The `t.me/s/<channel>` web pages use Cloudflare and change structure frequently. Telethon's MTProto gives clean `message.text` + `message.date` objects directly — no HTML parsing, immune to frontend changes.
+**Why MTProto instead of scraping?** Because `t.me/s/<channel>` is behind Cloudflare and the HTML structure changes all the time. Telethon talks to Telegram's actual API, so you get clean `message.text` + `message.date` objects directly. No HTML parsing, nothing breaks when Telegram redesigns their web preview.
 
 **Step 1** — Get free API credentials from [my.telegram.org](https://my.telegram.org):
 > Sign in → "API development tools" → create an app → copy `api_id` (integer) and `api_hash`
@@ -377,7 +370,7 @@ Full field reference → [`docs/setup_guide.md`](docs/setup_guide.md)
 python main.py profile.yaml --dry-run
 ```
 
-Prints your full config summary and confirms the DB initialises correctly — no API calls made.
+Prints your config summary and confirms the DB initializes. No API calls, no Telegram messages, nothing leaves your machine.
 
 ### 6. Run
 
@@ -408,7 +401,7 @@ Register-ScheduledTask -TaskName "JobRadar" -Action $action -Trigger $trigger -R
 
 ## 📊 Performance & API Usage
 
-### Typical Run Stats
+### What a typical run looks like
 
 | Stage | Count | Time | Notes |
 |:---|:---|:---|:---|
@@ -429,16 +422,16 @@ Register-ScheduledTask -TaskName "JobRadar" -Action $action -Trigger $trigger -R
 | **Telegram Bot** | ~10–15 messages | Unlimited | Free |
 | **Telegram MTProto** | ~42 messages fetched, ~5 Gemini calls | Unlimited (public channels) | Free — official API, no rate issues |
 
-**Gemini rate limits** (gemini-3.1-flash-lite free tier, confirmed via official docs):
-- **RPM**: ~15 requests/min → `REQ_INTERVAL = 4.5s` gives ~13.3 RPM (safe headroom)
-- **TPM**: ~250,000 tokens/min → 13.3 req/min × ~2,400 tok = 31K TPM (12% of limit)
-- **RPD**: ~1,500 requests/day → 130 jobs × 2 runs = 260 RPD (17% of limit)
+**Gemini rate limits** (free tier, as of writing):
+- **RPM**: ~15 req/min limit. `REQ_INTERVAL = 4.5s` keeps us at ~13.3 RPM with headroom
+- **TPM**: ~250K tokens/min limit. We use ~31K TPM (12%). Not even close
+- **RPD**: ~1,500 req/day limit. 130 jobs × 2 runs = 260 RPD (17%). Plenty of room
 
 ---
 
 ## 🛠️ Maintenance & Tuning
 
-**Adding ATS companies** — add the slug to the correct section in `companies.yaml`. Verify the endpoint first:
+**Adding ATS companies** - just add the slug to the right section in `companies.yaml`. Verify the endpoint actually works first:
 
 ```bash
 # Greenhouse
@@ -447,49 +440,51 @@ curl -s "https://boards.greenhouse.io/v1/boards/SLUG/jobs" | python -m json.tool
 curl -s "https://api.lever.co/v0/postings/SLUG" | python -m json.tool | head -5
 # SmartRecruiters
 curl -s "https://api.smartrecruiters.com/v1/companies/SLUG/postings" | python -m json.tool | head -5
-# Workday (POST-based — requires tenant, wd_server, site)
+# Workday (POST-based, needs tenant/server/site)
 curl -s -X POST "https://TENANT.WDSERVER.myworkdayjobs.com/wday/cxs/TENANT/SITE/jobs" \
   -H "Content-Type: application/json" -H "Accept: application/json" \
   -H "Origin: https://TENANT.WDSERVER.myworkdayjobs.com" \
   -d '{"appliedFacets":{},"limit":3,"offset":0,"searchText":""}' | python -m json.tool | head -10
 ```
 
-**Tuning the pre-filter** — adjust `hard_reject.experience_keywords` and `hard_reject.role_blacklist` in `profile.yaml` if too many irrelevant jobs slip through.
+**Too many junk jobs getting through?** Tighten `hard_reject.experience_keywords` and `hard_reject.role_blacklist` in `profile.yaml`.
 
-**Tuning the ranker** — edit numeric weights in `profile.yaml → ranker_weights:`. All bonus/penalty/threshold values are configurable without touching code. Skill, domain, and project detection patterns rebuild automatically from your profile each run.
+**Ranker not prioritizing well?** Edit the weights in `profile.yaml` under `ranker_weights:`. All the bonus/penalty numbers are right there, no code to touch.
 
-**Switching domains** (e.g. cybersecurity, data engineering) — update `candidate.skills`, `candidate.industries`, and `candidate.projects.relevance_signal` in `profile.yaml`. The ranker, prefilter, and AI scorer all adapt — no code changes needed.
+**Switching domains** (say you're into cybersecurity or data engineering now) - update `candidate.skills`, `candidate.industries`, and `candidate.projects.relevance_signal` in `profile.yaml`. The whole pipeline adapts.
 
-**Naukri coverage** — add more keywords or locations under `profile.yaml → naukri:`. Each keyword × location combo = 2 pages × up to 20 listings each.
+**Want more Naukri coverage?** Add keywords or locations under `profile.yaml` in the `naukri:` section. Each keyword × location combo gives you 2 pages × 20 listings.
 
-**Serper budget** — `MAX_SERPER_CALLS` (default 25) and `TIER_1_BUDGET` (default 10) in `sources/serper.py`. Tier 1 budget ensures the unique sources always run regardless of total cap.
+**Serper budget** - `MAX_SERPER_CALLS` (default 25) and `TIER_1_BUDGET` (default 10) live in `sources/serper.py`. Tier 1 budget makes sure the high-value dorks always run even if you lower the total cap.
 
-**Per-user profiles** — run `python main.py my_profile.yaml` to use a different profile file. Each profile gets its own DB and log file under `data/`.
+**Multiple people using this?** Run `python main.py my_profile.yaml` with a different profile file. Each profile gets its own DB and log file under `data/`.
 
 ---
 
 ## 🔭 Future Goals
 
-1. **Multi-profile / loosely-coupled architecture** — move to a `profiles/` directory where each `.yaml` is a fully self-contained config. A single codebase serving multiple people simultaneously on a hosted instance.
+Things I want to get to, roughly in order:
 
-2. **Fix disabled sources** — Wellfound, Instahyre, and Cutshort are currently disabled due to bot blocking or API instability. The goal is to handle these properly via headless browser or reverse-engineered API calls.
+1. **Multi-profile support** - move to a `profiles/` directory where each `.yaml` is fully self-contained. One codebase, multiple people, one hosted instance.
 
-3. **Application tracking UI + weekly insights** — a lightweight web UI for tracking applications and a personal hiring dashboard: which companies are actively hiring for your stack, which sources yield the highest-scoring jobs, where the best opportunities are concentrated.
+2. **Fix the broken sources** - Wellfound, Instahyre, and Cutshort are disabled right now because they block bots or have flaky APIs. Need to figure out headless browser or proper API workarounds.
 
-4. **Global-first design** — the current source mix skews heavily toward India. The goal is to make India-specific sources opt-in rather than default, and expand global coverage so the tool is equally useful anywhere.
+3. **Application tracking + insights** - a simple web UI to track where you've applied, which companies are hiring for your stack, and which sources actually produce good matches.
 
-5. **Public hosting** — if the above pieces come together, host it as a public service. Users onboard their own profile, connect their Telegram, and get alerts without running any code themselves.
+4. **Make it work well outside India** - right now the source mix is heavily India-focused. Want to make those opt-in and add better global coverage.
+
+5. **Host it publicly** - if the above comes together, run it as a service where people just upload a profile and connect Telegram. No setup, no server.
 
 ---
 
 ## 🤝 Contributing
 
-Contributions are welcome. The most impactful thing you can add right now is a **new job source**.
+PRs welcome. The single most useful thing you can contribute is a **new job source**.
 
-See **[CONTRIBUTING.md](CONTRIBUTING.md)** for the full guide — it covers the `Job` dataclass contract, how to wire a new source into the pipeline, lazy-fetch patterns, error handling expectations, and the PR process.
+**[CONTRIBUTING.md](CONTRIBUTING.md)** has the full guide: the `Job` dataclass contract, how to wire a source into the pipeline, lazy-fetch patterns, error handling, and the PR process.
 
 > [!NOTE]
-> When adding a new source, please include a brief description of what the source provides and why it's a good fit for the pipeline (unique coverage, not duplicating existing ATS APIs, etc.).
+> If you're adding a source, include a quick note on what it covers and why it's not redundant with existing ones.
 
 ---
 
