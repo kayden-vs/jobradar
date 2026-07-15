@@ -57,37 +57,37 @@ It's tuned for freshers and early-career devs out of the box, but everything it 
 
 ```
 ┌─────────────────────────────────────────────────┐
-│         17 Job Sources (Concurrent)             │
+│          17 Job Sources (Concurrent)            │
 │  ATS APIs · Workday · YC · hackernews · Naukri  │
-│  hiringcafe · Blogs RSS · Serper · HN · More    │
+│    hiringcafe · Blogs RSS · Serper · HN · More  │
 └────────────────────────┬────────────────────────┘
                          │ ~8,000–9,000 raw jobs
                          ▼
 ┌─────────────────────────────────────────────────┐
-│           Multi-Key Deduplication               │
+│            Multi-Key Deduplication              │
 │  Title+Company+Location MD5 · Canonical URL MD5 │
-│  Run-level + SQLite persistent — never repeat   │
+│    Run-level + SQLite persistent — never repeat │
 └────────────────────────┬────────────────────────┘
                          │ ~600–800 new jobs
                          ▼
 ┌─────────────────────────────────────────────────┐
-│         Smart Rule-Based Pre-Filter             │
+│          Smart Rule-Based Pre-Filter            │
 │  Expiry · Blacklists · ATS Allowlist · Location │
-│  RSS Tags · Experience · Company Cap            │
-│        Drops ~90–95% with zero AI cost          │
+│        RSS Tags · Experience · Company Cap      │
+│          Drops ~90–95% with zero AI cost        │
 └────────────────────────┬────────────────────────┘
                          │ ~50–150 eligible jobs
                          ▼
 ┌─────────────────────────────────────────────────┐
-│         Heuristic Relevance Ranking             │
-│  Go/TS stack · Fintech · Fresher · Recency      │
-│       Best-fit jobs scored first, free          │
+│          Heuristic Relevance Ranking            │
+│     Go/TS stack · Fintech · Fresher · Recency   │
+│          Best-fit jobs scored first, free       │
 └────────────────────────┬────────────────────────┘
                          │ ranked, best-first
                          ▼
 ┌─────────────────────────────────────────────────┐
-│     AI Scorer — Gemini 3.1 Flash-Lite           │
-│  Native JSON mode · 4.5s throttle (~13 RPM)     │
+│       AI Scorer — Gemini 3.1 Flash-Lite         │
+│    Native JSON mode · 4.5s throttle (~13 RPM)   │
 │  130 jobs/run · few-shot calibrated 1–10 scale  │
 └────────────────────────┬────────────────────────┘
                          │
