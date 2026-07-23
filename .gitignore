@@ -7,3 +7,5 @@ data/
 
 # profiles/*.yaml
 # !profiles/template.yaml
+# Brag video working directory
+brag-output/
