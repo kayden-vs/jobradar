@@ -32,7 +32,7 @@ It's tuned for freshers and early-career devs out of the box, but everything it 
 
 <div align="center">
   <a href="docs/showcase.mp4">
-    <video src="https://github.com/user-attachments/assets/7c9f8765-8c65-47f6-b628-ea329e9141f7" width="720" autoplay muted loop playsinline poster="docs/brag.jpg">
+    <video src="https://github.com/user-attachments/assets/97762dde-f52d-47a6-b75c-4473a917fdfa" width="720" autoplay muted loop playsinline poster="docs/brag.jpg">
       <img src="docs/brag.jpg" width="720" alt="JobRadar launch video — 17 sources, 9000 listings, 2-6 Telegram alerts"/>
     </video>
   </a>
