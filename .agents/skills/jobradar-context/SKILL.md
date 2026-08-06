@@ -59,7 +59,6 @@ jobradar/
 │
 ├── notify/                  # Notification layer
 │   ├── telegram_bot.py      # Urgent push alerts + session divider card
-│   ├── tracker_bot.py       # Standalone Telegram polling bot (/applied, /responded, /status, /help)
 │   ├── followup_check.py    # 7-day followup drafts + 14-day dead marking
 │   └── weekly_summary.py    # Friday weekly radar digest (7 insights, source quality, market demand)
 │

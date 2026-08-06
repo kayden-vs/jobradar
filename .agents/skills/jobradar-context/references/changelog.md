@@ -4,6 +4,14 @@
 
 ---
 
+## [2026-08-06] Remove Telegram application tracker bot
+**What**: Removed the standalone Telegram polling bot background process. Removed start/stop blocks for `notify.tracker_bot` from `run.sh`. The `tracker_bot.py` file is kept in repo but is no longer invoked anywhere.
+**Why**: Feature was not useful in practice — the bot ran as a background process on EC2 to handle `/applied`, `/responded`, `/status` commands that were rarely/never used. Also removed the "Tracker bot online" startup notification.
+**Files**: `run.sh`, `.agents/skills/jobradar-context/SKILL.md`
+**Status**: Complete
+
+---
+
 ## [2026-07-11] Add per-source observability to prefilter and ranker
 **What**: Added per-source survival stats to `pipeline/prefilter.py` (logs `telegram_channels: N in -> M passed (X%)` for key sources after each run) and per-source score distribution to `pipeline/ranker.py` (logs median/max ranker score per source and how many jobs survive the AI cap cutoff). Also added Telegram artifact title rejection to `_NON_JOB_CONTENT_RE` — titles like `"Go Careers – Telegram"` (Gemini hallucinating channel header as job title) now get rejected by prefilter instead of wasting a scorer call.
 **Why**: Without per-source logging there was no way to tell if `telegram_channels` jobs were being filtered or ranked out. The new log lines definitively answer "are Telegram jobs reaching the scorer?" on every run.
