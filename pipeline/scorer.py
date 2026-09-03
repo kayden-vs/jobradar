@@ -214,33 +214,45 @@ Dimension analysis: [A] full-stack ✓ [B] intern ✓ [C] Node.js +1 but React-h
 # ─────────────────────────────────────────────────────────────────
 # SYSTEM PROMPT (sent once per request, anchors the model behaviour)
 # ─────────────────────────────────────────────────────────────────
-_SYSTEM_PROMPT = (
-    "You are a precise job relevance scorer for a specific candidate. "
-    "Before assigning a final score, you MUST evaluate EVERY dimension "
-    "listed in the scoring rubric. This prevents pattern-matching to a "
-    "single strong signal and ignoring disqualifiers.\n\n"
-    "Candidate context: India-based fresher (graduating May 2027) targeting "
-    "backend engineering roles. It is July 2026 — India Go/backend fresher "
-    "roles are rare. Score relative to what is realistically available:\n"
-    "  • TypeScript, Node.js, or Python backend intern: score 6–8 (not 3–4)\n"
-    "  • A role being 'not Go' is NOT a reason to score below 6 if it is a "
-    "    strong backend fresher match in other dimensions\n"
-    "  • Sales/Solutions/Customer/GTM 'Engineer' titles are NOT software "
-    "    engineering roles — score 1–2 regardless of company prestige\n\n"
-    "HARD RULES (override all bonuses):\n"
-    "  1. EXPIRY: Any closed/filled/deadline-passed signal → score=1, expired=true\n"
-    "  2. UNPAID: Explicitly unpaid/no stipend → hard cap: score ≤ 4\n"
-    "  3. AGGREGATE PAGE: Job board listing page, not an individual posting → score ≤ 2\n"
-    "  4. TALENT PIPELINE: 'Submit for future consideration' form → score ≤ 3\n"
-    "  5. WRONG ROLE: Sales, marketing, HR, operations, customer success roles → score ≤ 2\n"
-    "  6. SENIOR/LEAD: Requires 2+ years or has Senior/Lead/Staff/Principal in title → score ≤ 3\n"
-    "  7. LOCATION: On-site outside India with no remote option → score ≤ 2\n"
-    "  8. AGE/RECENCY: If the job description explicitly mentions a posting date from a previous year (e.g. 2024, 2025) OR >10 days ago → hard cap: score ≤ 3\n\n"
-    "MANDATORY: 'reason' field must be non-empty for ALL scores (1–10). "
-    "For score ≥ 6: also fill 'highlights' and 'red_flags'.\n\n"
-    "Always respond with valid JSON only — no markdown fences, no extra text.\n\n"
-    + _FEW_SHOT_EXAMPLES
-)
+def _build_system_prompt() -> str:
+    """Build the system prompt with the current month/year injected dynamically.
+
+    Called once at module load. Prevents the model seeing a stale date in the
+    system prompt that contradicts the fresh date in the user prompt.
+    """
+    now_str = datetime.now().strftime("%B %Y")  # e.g. "September 2026"
+    return (
+        "You are a precise job relevance scorer for a specific candidate. "
+        "Before assigning a final score, you MUST evaluate EVERY dimension "
+        "listed in the scoring rubric. This prevents pattern-matching to a "
+        "single strong signal and ignoring disqualifiers.\n\n"
+        f"Candidate context: India-based fresher (graduating May 2027) targeting "
+        f"backend engineering roles. It is {now_str} — India Go/backend fresher "
+        "roles are rare. Score relative to what is realistically available:\n"
+        "  • TypeScript, Node.js, or Python backend intern: score 6–8 (not 3–4)\n"
+        "  • A role being 'not Go' is NOT a reason to score below 6 if it is a "
+        "    strong backend fresher match in other dimensions\n"
+        "  • Sales/Solutions/Customer/GTM 'Engineer' titles are NOT software "
+        "    engineering roles — score 1–2 regardless of company prestige\n\n"
+        "HARD RULES (override all bonuses):\n"
+        "  1. EXPIRY: Any closed/filled/deadline-passed signal → score=1, expired=true\n"
+        "  2. UNPAID: Explicitly unpaid/no stipend → hard cap: score ≤ 4\n"
+        "  3. AGGREGATE PAGE: Job board listing page, not an individual posting → score ≤ 2\n"
+        "  4. TALENT PIPELINE: 'Submit for future consideration' form → score ≤ 3\n"
+        "  5. WRONG ROLE: Sales, marketing, HR, operations, customer success roles → score ≤ 2\n"
+        "  6. SENIOR/LEAD: Requires 2+ years or has Senior/Lead/Staff/Principal in title → score ≤ 3\n"
+        "  7. LOCATION: On-site outside India with no remote option → score ≤ 2\n"
+        "  8. AGE/RECENCY: If the job description explicitly states it was posted in a PRIOR "
+        "     calendar year (e.g. posted in 2024 or 2025) → hard cap: score ≤ 3. "
+        "     A job being a few weeks old is fine — the pipeline already drops jobs >45 days old.\n\n"
+        "MANDATORY: 'reason' field must be non-empty for ALL scores (1–10). "
+        "For score ≥ 6: also fill 'highlights' and 'red_flags'.\n\n"
+        "Always respond with valid JSON only — no markdown fences, no extra text.\n\n"
+        + _FEW_SHOT_EXAMPLES
+    )
+
+
+_SYSTEM_PROMPT = _build_system_prompt()
 
 
 def build_scoring_prompt(job: dict, profile: dict) -> str:
@@ -262,7 +274,7 @@ def build_scoring_prompt(job: dict, profile: dict) -> str:
     return f"""You are a job relevance scorer for a specific candidate. Score how relevant a job posting is for this person.
 
 Today's Date: {today}
-Market Context: India Go/backend fresher market is thin in July 2026. Score relative to what's realistically available — don't penalize for "not Go" if it's a genuine backend fresher role.
+Market Context: India Go/backend fresher market is thin in {datetime.now().strftime('%B %Y')}. Score relative to what's realistically available — don't penalize for "not Go" if it's a genuine backend fresher role.
 
 ## CANDIDATE PROFILE
 
@@ -374,7 +386,7 @@ Use the dimension scores above to determine the final score:
 - 3–4 : Some relevance but key dimension(s) fail (wrong stack, unpaid, weak role type)
 - 1–2 : Hard fail on [A] or [D] or [G] or [H], or aggregate/pipeline/wrong-role
 
-**Market calibration (July 2026)**: Go/backend fresher roles in India are rare.
+**Market calibration**: Go/backend fresher roles in India are rare.
 A TypeScript/Node.js backend intern with India/Remote + 0-exp signals should score 7–8.
 
 Mandatory score thresholds from STEP 1 apply BEFORE final score assignment.
@@ -654,16 +666,55 @@ def score_all(
             f"(company, title) pairs from ATS sources"
         )
 
-    # ── Step 2b: Hard fallback cap (absolute ceiling) ────────────────────
-    # With Gemini, this is the PRIMARY (and only) cap — no token budget gate.
-    # Ensures the pipeline doesn't balloon if prefilter is overly permissive.
+    # ── Step 2b: Source-stratified slot allocation ────────────────────────
+    #
+    # Problem: India-first sources (Internshala, Telegram, Serper, etc.) have
+    # structurally SHORT descriptions and score low on the heuristic ranker vs
+    # verbose ATS JDs. Without this, 120+ Internshala jobs pass prefilter but
+    # ALL get cut by the pure-rank AI cap — the AI never sees any of them.
+    #
+    # Fix: Split the budget into two tiers:
+    #   Tier A — top `tier_a_size` jobs by heuristic rank (any source)
+    #   Tier B — best India-first jobs not already in Tier A
+    # Both tiers stay heuristic-sorted within their group. Total budget unchanged.
+    #
+    # `tier_a_size` (default 100) is tunable in profile.yaml → hard_reject.
+    # The remaining 50 slots go to the best India-first jobs outside Tier A.
     max_ai_jobs = profile.get("hard_reject", {}).get("max_ai_jobs_per_run", 200)
-    if len(jobs) > max_ai_jobs:
-        dropped_cap = len(jobs) - max_ai_jobs
-        jobs = jobs[:max_ai_jobs]
-        logger.warning(
-            f"Hard cap: trimmed {dropped_cap} lowest-ranked jobs "
-            f"(max_ai_jobs_per_run={max_ai_jobs}). Increase cap in profile.yaml if needed."
+    tier_a_size = min(
+        profile.get("hard_reject", {}).get("tier_a_size", 100),
+        max_ai_jobs,
+    )
+
+    # Sources with structurally short descriptions that need guaranteed slots
+    _INDIA_FIRST_SOURCES = {
+        "internshala", "telegram_channels", "freshers_blogs",
+        "naukri", "serper", "hiringcafe",
+    }
+
+    tier_a = jobs[:tier_a_size]
+    tier_b_budget = max_ai_jobs - len(tier_a)
+    tier_b_candidates = [
+        j for j in jobs[tier_a_size:]
+        if j.get("source", "") in _INDIA_FIRST_SOURCES
+    ]
+    tier_b = tier_b_candidates[:tier_b_budget]  # already heuristic-sorted
+
+    pre_count = len(jobs)
+    jobs = tier_a + tier_b
+    tier_b_srcs = sorted({j.get('source', '?') for j in tier_b})
+
+    if pre_count > max_ai_jobs:
+        logger.info(
+            f"Slot allocation: Tier A={len(tier_a)} (top heuristic any-source) + "
+            f"Tier B={len(tier_b)} India-first ({', '.join(tier_b_srcs) or 'none'}) "
+            f"= {len(jobs)} total | {pre_count - len(jobs)} outside budget"
+        )
+    elif pre_count > tier_a_size:
+        logger.info(
+            f"Slot allocation: Tier A={len(tier_a)} + "
+            f"Tier B={len(tier_b)} India-first ({', '.join(tier_b_srcs) or 'none'}) "
+            f"= {len(jobs)} total"
         )
 
     urgent        : list[dict] = []

@@ -125,7 +125,7 @@ _DEFAULT_WEIGHTS: dict = {
     # ── Synergy bonuses ───────────────────────────────────────────────────
     "synergy_skill_domain":   3,   # primary skill AND high-priority domain both found
     "synergy_skill_project":  2,   # primary skill AND a project signal both found
-    # ── Source-aware adjustments ──────────────────────────────────────────
+    # ── Source-aware adjustments ────────────────────────────────────────
     "source_internshala_stipend_bonus":  2,
     "source_internshala_stipend_min":    10_000,
     "source_freshers_blog_batch_bonus":  1,
@@ -138,6 +138,12 @@ _DEFAULT_WEIGHTS: dict = {
     # with long keyword-rich JDs that score higher on skill density.
     "source_telegram_boost":             3,
     "source_workday_bonus":              2,   # Workday companies are curated ATS employers (Cisco, Adobe, etc.)
+    # ── Description-level seniority penalty ————————————————————————
+    # Applied when description (first 500 chars) contains an explicit "X+ years"
+    # requirement AND the title has NO fresher/intern compensating signal.
+    # Sinks ATS jobs like "Software Engineer" that require 3+ years in the JD
+    # but have a clean-looking title that slips past the title seniority penalty.
+    "penalty_desc_seniority":           -5,
 }
 
 
@@ -210,6 +216,21 @@ _SENIORITY_LEVEL_RE = re.compile(
     r'|\b(?:engineer|developer)\s+(?:ii?i|iv|[3-9])\b'  # "Developer III"
     r'|\bengineering\s*manager\b'
     r'|\btech\s*lead\b',
+    re.IGNORECASE,
+)
+
+# NEW v4: Description-level experience requirement detector.
+# Catches ATS jobs with clean titles ("Software Engineer") that bury
+# "5+ years required" in the description body. The title seniority check
+# (_SENIORITY_LEVEL_RE) misses these. Only checks the first 500 chars
+# of the description (where requirements sections always appear).
+# Deliberately conservative: won't trigger on "working alongside senior
+# engineers" or "X years experience preferred" (only hard requirements).
+_EXP_REQUIREMENT_DESC_RE = re.compile(
+    r'\b([2-9]|1[0-9])\+?\s*(?:years?|yrs?)\s*(?:of\s+)?(?:relevant\s+)?(?:work\s+)?(?:experience|exp)\b'
+    r'|\bminimum\s+(?:of\s+)?([2-9]|1[0-9])\s*(?:years?|yrs?)\b'
+    r'|\bat\s+least\s+([2-9]|1[0-9])\s*(?:years?|yrs?)\b'
+    r'|\brequires?\s+([2-9]|1[0-9])\+?\s*(?:years?|yrs?)\b',
     re.IGNORECASE,
 )
 
@@ -773,7 +794,7 @@ def _penalty_score(
         delta += p
         reasons.append(f"role-mismatch({p:+})")
 
-    # ── Seniority-level mismatch (NEW v3) ─────────────────────────────
+    # ── Seniority-level mismatch (title) (NEW v3) ─────────────────────────
     # Senior/Staff/Principal/Lead/SDE III+ are experience-level mismatches
     # for a fresher candidate. Stronger penalty than role_mismatch because
     # seniority is a harder barrier than role type.
@@ -781,6 +802,17 @@ def _penalty_score(
         p = w["penalty_seniority_level"]
         delta += p
         reasons.append(f"seniority-level({p:+})")
+
+    # ── Seniority-level mismatch (description) (NEW v4) ───────────────────
+    # Catches ATS jobs with generic titles ("Software Engineer") that hide
+    # "5+ years required" in the description body. Only check first 500 chars
+    # (where requirements are always listed). Skip if fresher signal in title
+    # to avoid false positives like "intern working on senior-engineer projects".
+    if desc and not _FRESHER_TITLE_RE.search(title):
+        if _EXP_REQUIREMENT_DESC_RE.search(desc[:500]):
+            p = w.get("penalty_desc_seniority", -5)
+            delta += p
+            reasons.append(f"desc-exp-requirement({p:+})")
 
     # ── Synergy: primary skill + high-priority domain ─────────────────────
     if has_primary_skill and has_high_domain:

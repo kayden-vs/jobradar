@@ -156,6 +156,14 @@ hard_reject:
                                     #   RPM: 13.3 req/min, unchanged — safely under 15 RPM
                                     # Why not higher: ranker scores 131–150 are in heuristic 12–13
                                     # (below the IQR midpoint). Beyond 150, signal-to-noise drops.
+  tier_a_size: 100                  # Source-stratified slot allocation:
+                                    #   Tier A: top 100 jobs by pure heuristic rank (any source)
+                                    #   Tier B: top 50 from India-first sources not in Tier A
+                                    #           (internshala, telegram, freshers_blogs, naukri, serper, hiringcafe)
+                                    # Problem solved: Internshala (120+ jobs/run, median score=-1) was
+                                    # getting cut by the AI cap because verbose ATS JDs always outscore it.
+                                    # Tuning: increase if India-first sources are under-represented;
+                                    # decrease if ATS signal quality is too diluted.
 
   experience_keywords:
     # If ANY of these appear in the job description → immediate reject
@@ -343,6 +351,11 @@ ranker_weights:
   penalty_ats_stub_desc:    -2  # ATS job with description shorter than threshold (lazy-fetch sources exempt)
   ats_stub_desc_threshold:  300 # Min chars for ATS description to avoid stub penalty
   penalty_role_mismatch:    -4  # Clearly non-backend role (TechOps, IT Ops, Support, etc.)
+  penalty_desc_seniority:   -5  # Description (first 500 chars) has explicit "X+ years experience" requirement
+                                # AND title has no fresher/intern compensating signal.
+                                # Catches ATS jobs like "Software Engineer" that hide "5+ years" in the JD.
+                                # Won't fire on: jobs with intern/fresher in title, or vague mentions like
+                                # "working alongside senior engineers".
 
   # ── Synergy bonuses ──────────────────────────────────────────────
   # High-precision combos the AI consistently scores ≥9.

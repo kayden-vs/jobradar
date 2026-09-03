@@ -341,6 +341,9 @@ def _fetch_search_page(
         )
         return []
 
+    exp_rejected = 0
+    age_rejected = 0
+
     survivors = []
     for card in job_list:
         job_id  = card.get("jobId", "")
@@ -368,7 +371,6 @@ def _fetch_search_page(
         else:
             location_val = location
 
-
         # URL: 'urlStr' is the canonical direct listing URL
         url_str   = card.get("urlStr", "") or card.get("jdURL", "")
         posted_at = _parse_naukri_date(card.get("addDate") or card.get("createdDate"))
@@ -395,6 +397,7 @@ def _fetch_search_page(
                         "Naukri Stage-1 REJECT (exp): %r @ %r — minExp=%s > %d",
                         title, company, min_exp, max_exp_years,
                     )
+                    exp_rejected += 1
                     continue
             except (TypeError, ValueError):
                 pass   # Unparseable — let it through; prefilter will catch it
@@ -405,6 +408,7 @@ def _fetch_search_page(
                 "Naukri Stage-1 REJECT (age): %r @ %r — posted_at=%s",
                 title, company, posted_at,
             )
+            age_rejected += 1
             continue
 
         # Build canonical URL
@@ -412,7 +416,7 @@ def _fetch_search_page(
             url_str = "https://www.naukri.com" + url_str
 
         survivors.append({
-            "_naukri_job_id":  job_id,          # internal — removed before returning
+            "_naukri_job_id":  job_id,
             "title":           title,
             "company":         company,
             "location":        location_val.strip(),
@@ -430,8 +434,9 @@ def _fetch_search_page(
         })
 
     logger.debug(
-        "Naukri search p%d %r / %r: %d cards -> %d after Stage-1",
+        "Naukri search p%d %r / %r: %d cards -> %d passed (exp_rejected=%d age_rejected=%d)",
         page_no, keyword, location, len(job_list), len(survivors),
+        exp_rejected, age_rejected,
     )
     return survivors
 
@@ -509,10 +514,19 @@ def fetch_naukri(profile: dict = None) -> list:
         len(stage1_jobs), max_exp_years, max_age_days,
     )
 
-    # Strip the internal job ID key — not needed downstream (full JD fetch removed).
-    # Jobs carry the Stage-1 snippet as description; prefilter and AI scorer use that.
-    for job in stage1_jobs:
-        job.pop("_naukri_job_id", None)
+    if len(stage1_jobs) == 0:
+        logger.warning(
+            "Naukri: 0 jobs survived Stage-1 across all %d search calls. "
+            "Possible causes: (1) API blocked/rate-limited — check for silent 200s with empty body, "
+            "(2) exp filter too strict (max_required=%dyr) — Naukri minExp may be set to 2+ by recruiters, "
+            "(3) age filter too strict (max_job_age_days=%dd) — recent postings may not have crawled yet. "
+            "Enable DEBUG logging to see per-card filter decisions.",
+            total_combos, max_exp_years, max_age_days,
+        )
+
+    # NOTE: _naukri_job_id is intentionally NOT stripped here.
+    # scorer.py uses it to trigger lazy full-JD fetch (lazy_fetch_naukri_detail).
+    # scorer.py strips it after fetch (job.pop("_naukri_job_id", None)).
 
     logger.info("Naukri: %d jobs entering pipeline", len(stage1_jobs))
 

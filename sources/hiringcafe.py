@@ -51,10 +51,11 @@ _MAX_PAGES = 3         # max pages per search query (40 jobs/page)
 _MAX_BUILD_ID_RETRIES = 1  # re-fetch build ID at most once on 404
 
 # Browser-like headers — hiring.cafe checks for these
+# Chrome version updated periodically to avoid stale UA bot-detection.
 _UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
     "AppleWebKit/537.36 (KHTML, like Gecko) "
-    "Chrome/124.0.0.0 Safari/537.36"
+    "Chrome/136.0.0.0 Safari/537.36"
 )
 
 _HEADERS = {
@@ -67,6 +68,9 @@ _HEADERS = {
     "Sec-Fetch-Dest": "empty",
     "Sec-Fetch-Mode": "cors",
     "Sec-Fetch-Site": "same-origin",
+    "Sec-CH-UA": '"Chromium";v="136", "Google Chrome";v="136", "Not.A/Brand";v="99"',
+    "Sec-CH-UA-Mobile": "?0",
+    "Sec-CH-UA-Platform": '"Windows"',
     "Connection": "keep-alive",
 }
 
