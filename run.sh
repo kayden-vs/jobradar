@@ -33,7 +33,7 @@ if [ $? -ne 0 ]; then
 fi
 
 # kill Python after 60 minutes if it hangs
-timeout 3600 python main.py >> "$LOG_FILE" 2>&1
+timeout 3600 python main.py
 EXIT_CODE=$?
 
 if [ $EXIT_CODE -eq 124 ]; then
