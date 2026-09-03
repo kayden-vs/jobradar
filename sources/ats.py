@@ -526,10 +526,10 @@ def fetch_all_ats(companies_config: dict) -> list[dict]:
         all_jobs.extend(jobs)
         logger.info(f"Workable {company}: {len(jobs)} jobs")
 
-    for company in companies_config.get("smartrecruiters") or []:
-        jobs = fetch_smartrecruiters(company)
-        all_jobs.extend(jobs)
-        logger.info(f"SmartRecruiters {company}: {len(jobs)} jobs")
+    # for company in companies_config.get("smartrecruiters") or []:
+    #     jobs = fetch_smartrecruiters(company)
+    #     all_jobs.extend(jobs)
+    #     logger.info(f"SmartRecruiters {company}: {len(jobs)} jobs")
 
     for company in companies_config.get("rippling") or []:
         jobs = fetch_rippling(company)
