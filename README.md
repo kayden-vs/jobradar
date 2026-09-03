@@ -25,7 +25,7 @@ It's tuned for freshers and early-career devs out of the box, but everything it 
 <div align="center">
   <img src="docs/telegram_ss.jpg" width="260" alt="A JobRadar Telegram alert showing an AI-scored job match"/>
   <br/>
-  <sub><i>What actually shows up in Telegram when it finds something worth your time.</i></sub>
+  <sub><i>What actually shows up in <a href="https://t.me/backendJobsFresher">Telegram</a> when it finds something worth your time.</i></sub>
 </div>
 
 <br/>
