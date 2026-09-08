@@ -7,20 +7,16 @@ from telegram import Bot
 from telegram.constants import ParseMode
 
 
-_MD2_SPECIAL = re.compile(r'([_*\[\]()~`>#+\-=|{}.!\\\\])')
+_MD2_SPECIAL = re.compile(r'([_*\[\]()~`>#+\-=|{}.!\\])')
 
 def _esc(text: str) -> str:
     """Escape a plain string for Telegram MarkdownV2."""
-    return _MD2_SPECIAL.sub(r'\\\\\\1', str(text))
+    return _MD2_SPECIAL.sub(r'\\\1', str(text))
 
 logger = logging.getLogger(__name__)
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID   = os.getenv("TELEGRAM_CHAT_ID")
-
-# Retry settings -- tuned for transient EC2/Telegram network blips
-_MAX_RETRIES  = 3        # total attempts (1 original + 2 retries)
-_RETRY_DELAYS = [5, 15]  # seconds to wait before attempt 2 and 3
 
 
 def format_job_message(job: dict) -> str:
@@ -60,13 +56,15 @@ def format_job_message(job: dict) -> str:
         f"{score_emoji} *{_esc(job.get('title', 'N/A'))}*\n"
         f"🏢 {_esc(job.get('company', 'N/A'))}\n"
         f"📍 {_esc(job.get('location', 'N/A'))}{salary_line}\n"
-        f"📊 Score: *{_esc(score)}/10* — {_esc(urgency_label)}\n"
+        f"📊 Score: *{_esc(score)}/10* \u2014 {_esc(urgency_label)}\n"
         f"\n*Why it matches:*\n"
         f"{highlight_lines if highlight_lines else _esc('  — See job description')}\n"
     )
 
     if red_flag_lines:
         msg += f"*Watch out:*\n{red_flag_lines}\n"
+
+
 
     url    = job.get('url', '')
     source = job.get('source', 'unknown')
@@ -77,53 +75,33 @@ def format_job_message(job: dict) -> str:
 
 
 async def send_job_alert(job: dict, chat_id: str = ""):
-    """Send a single job alert to Telegram.
-
-    Retries up to _MAX_RETRIES times with backoff to survive transient
-    network blips (e.g. brief Telegram API or EC2 routing outages).
-    Falls back to plain text after all retries are exhausted.
-    """
+    """Send a single job alert to Telegram."""
     effective_chat_id = chat_id or TELEGRAM_CHAT_ID
-    bot     = Bot(token=TELEGRAM_BOT_TOKEN)
+    bot = Bot(token=TELEGRAM_BOT_TOKEN)
     message = format_job_message(job)
 
-    last_err = None
-    for attempt in range(1, _MAX_RETRIES + 1):
-        try:
-            await bot.send_message(
-                chat_id    = effective_chat_id,
-                text       = message,
-                parse_mode = ParseMode.MARKDOWN_V2,
-                disable_web_page_preview = True,
-            )
-            logger.info(
-                "Telegram: sent alert for %s @ %s",
-                job.get("title", "?"), job.get("company", "?"),
-            )
-            return  # success
-        except Exception as e:
-            last_err = e
-            if attempt < _MAX_RETRIES:
-                delay = _RETRY_DELAYS[attempt - 1]
-                logger.warning(
-                    "Telegram send attempt %d/%d failed: %s -- retrying in %ds",
-                    attempt, _MAX_RETRIES, e, delay,
-                )
-                await asyncio.sleep(delay)
-
-    logger.error("Telegram send failed after %d attempts: %s", _MAX_RETRIES, last_err)
-
-    # Plain-text fallback -- covers both network timeouts and bad Markdown
     try:
-        title   = job.get("title", "?")
-        company = job.get("company", "?")
-        score   = job.get("score", "?")
-        url     = job.get("url", "")
-        newline = "\n"
-        plain   = f"{title} @ {company} | Score: {score}/10{newline}{url}"
-        await bot.send_message(chat_id=effective_chat_id, text=plain)
-    except Exception as e2:
-        logger.error("Telegram plain-text fallback also failed: %s", e2)
+        await bot.send_message(
+            chat_id    = effective_chat_id,
+            text       = message,
+            parse_mode = ParseMode.MARKDOWN_V2,
+            disable_web_page_preview = True,
+        )
+        logger.info(f"Telegram: sent alert for {job['title']} @ {job['company']}")
+    except Exception as e:
+        logger.error(f"Telegram send failed: {e}")
+        # Fallback: send as plain text (no parse_mode) to guarantee delivery
+        try:
+            plain = (
+                f"{job.get('title','?')} @ {job.get('company','?')} | "
+                f"Score: {job.get('score','?')}/10\n{job.get('url','')}"
+            )
+            await bot.send_message(
+                chat_id = effective_chat_id,
+                text    = plain,
+            )
+        except Exception as e2:
+            logger.error(f"Telegram plain-text fallback also failed: {e2}")
 
 
 async def _send_run_summary_async(
@@ -146,10 +124,11 @@ async def _send_run_summary_async(
     time_str = now.strftime("%H:%M")    # e.g. "19:52"
 
     digest = scored - urgent  # non-urgent scored jobs to review
-    if urgent == 0:
-        urgent_line = "✅ No urgent alerts today"
-    else:
-        urgent_line = f"\U0001f6a8 Scroll up \u2014 {urgent} high\-priority job\(s\) above\!"
+    urgent_line = (
+        "✅ No urgent alerts today"
+        if urgent == 0
+        else f"🚨 Scroll up — {urgent} high\\-priority job\\(s\\) above\\!"
+    )
 
     msg = (
         f"🔥 {_esc(urgent)} urgent · {_esc(digest)} to review — JobRadar {_esc(date_str)}\n"
@@ -158,30 +137,18 @@ async def _send_run_summary_async(
         f"🕐 {_esc(time_str)} IST"
     )
 
-    last_err = None
-    for attempt in range(1, _MAX_RETRIES + 1):
-        try:
-            await bot.send_message(
-                chat_id    = effective_chat_id,
-                text       = msg,
-                parse_mode = ParseMode.MARKDOWN_V2,
-            )
-            return  # success
-        except Exception as e:
-            last_err = e
-            if attempt < _MAX_RETRIES:
-                delay = _RETRY_DELAYS[attempt - 1]
-                logger.warning(
-                    "Telegram summary send attempt %d/%d failed: %s -- retrying in %ds",
-                    attempt, _MAX_RETRIES, e, delay,
-                )
-                await asyncio.sleep(delay)
-
-    logger.error("Telegram summary send failed after %d attempts: %s", _MAX_RETRIES, last_err)
+    try:
+        await bot.send_message(
+            chat_id    = effective_chat_id,
+            text       = msg,
+            parse_mode = ParseMode.MARKDOWN_V2,
+        )
+    except Exception as e:
+        logger.error(f"Telegram summary send failed: {e}")
 
 
 async def send_run_summary(total_raw: int, passed_filter: int, scored: int, urgent: int):
-    """Legacy async wrapper -- kept for backwards compatibility."""
+    """Legacy async wrapper — kept for backwards compatibility."""
     await _send_run_summary_async(total_raw, passed_filter, scored, urgent)
 
 
