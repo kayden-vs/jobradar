@@ -7,11 +7,11 @@ from telegram import Bot
 from telegram.constants import ParseMode
 
 
-_MD2_SPECIAL = re.compile(r'([_*\[\]()~`>#+\-=|{}.!\\\\])')
+_MD2_SPECIAL = re.compile(r'([_*\[\]()~`>#+\-=|{}.!\\])')
 
 def _esc(text: str) -> str:
     """Escape a plain string for Telegram MarkdownV2."""
-    return _MD2_SPECIAL.sub(r'\\\\\\1', str(text))
+    return _MD2_SPECIAL.sub(r'\\\1', str(text))
 
 logger = logging.getLogger(__name__)
 
