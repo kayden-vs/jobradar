@@ -69,6 +69,7 @@ from sources.jobicy import fetch_jobicy
 from sources.remoteok import fetch_remoteok
 from sources.hiringcafe import fetch_hiringcafe
 from sources.telegram_channels import fetch_telegram_channels
+from sources.thejobcompany import fetch_thejobcompany
 from pipeline.dedup import deduplicate
 from pipeline.prefilter import prefilter, load_profile
 from pipeline.scorer import score_all
@@ -215,6 +216,10 @@ def run(profile_path: str, dry_run: bool = False):
     if source_enabled("telegram_channels"):
         logger.info("--- Fetching Telegram job channels (Telethon MTProto) ---")
         raw_jobs.extend(fetch_telegram_channels())
+
+    if source_enabled("thejobcompany"):
+        logger.info("--- Fetching TheJobCompany (thejobcompany.co.in) ---")
+        raw_jobs.extend(fetch_thejobcompany())
 
     total_raw = len(raw_jobs)
     logger.info(f"Total raw jobs from all sources: {total_raw}")
