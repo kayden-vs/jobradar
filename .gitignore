@@ -9,5 +9,4 @@ data/
 # !profiles/template.yaml
 # Brag video working directory
 brag-output*/
-graphify-out/
-.gemini/
+.pytest_cache/
