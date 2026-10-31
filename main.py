@@ -1,4 +1,6 @@
 import logging
+import time
+import json
 import os
 import sys
 from datetime import datetime
@@ -73,7 +75,7 @@ from sources.thejobcompany import fetch_thejobcompany
 from pipeline.dedup import deduplicate
 from pipeline.prefilter import prefilter, load_profile
 from pipeline.scorer import score_all
-from notify.telegram_bot import notify_urgent_jobs, send_session_divider
+from notify.telegram_bot import deliver_pending, send_session_divider
 from notify.weekly_summary import send_weekly_summary_if_due
 
 
@@ -118,6 +120,7 @@ def run(profile_path: str, dry_run: bool = False):
     ).strip()
 
     init_db(db_path)
+    os.environ["JOBRADAR_DB_PATH"] = db_path
 
     if not chat_id and not dry_run:
         logger.warning(
@@ -148,108 +151,141 @@ def run(profile_path: str, dry_run: bool = False):
         return val
 
     raw_jobs = []
+    source_health = {}
+
+    def fetch_source(name, fetch):
+        started = time.monotonic()
+        try:
+            jobs = fetch()
+            status = 'ok' if jobs else 'empty_or_failed'
+        except Exception as exc:
+            logger.error('Source %s failed (%s)', name, type(exc).__name__)
+            jobs, status = [], 'failed'
+        source_health[name] = {'status':status,'fetched':len(jobs),'seconds':round(time.monotonic()-started,1)}
+        logger.info('Source health %s: %s',name,source_health[name])
+        raw_jobs.extend(jobs)
+
 
     if source_enabled("ats"):
         logger.info("--- Fetching ATS endpoints (Greenhouse US/EU, Lever, Ashby, Workable) ---")
-        raw_jobs.extend(fetch_all_ats(companies))
+        fetch_source("ats", lambda: fetch_all_ats(companies))
 
     if source_enabled("workday"):
         logger.info("--- Fetching Workday ATS ---")
-        raw_jobs.extend(fetch_all_workday(companies, profile))
+        fetch_source("workday", lambda: fetch_all_workday(companies, profile))
 
     if source_enabled("cutshort"):
         logger.info("--- Fetching Cutshort ---")
-        raw_jobs.extend(fetch_cutshort())
+        fetch_source("cutshort", lambda: fetch_cutshort())
 
     if source_enabled("instahyre"):
         logger.info("--- Fetching Instahyre ---")
-        raw_jobs.extend(fetch_instahyre())
+        fetch_source("instahyre", lambda: fetch_instahyre())
 
     if source_enabled("wellfound"):
         logger.info("--- Fetching Wellfound ---")
-        raw_jobs.extend(fetch_wellfound())
+        fetch_source("wellfound", lambda: fetch_wellfound())
 
     if source_enabled("internshala"):
         logger.info("--- Fetching Internshala ---")
-        raw_jobs.extend(fetch_internshala())
+        fetch_source("internshala", lambda: fetch_internshala())
 
     if source_enabled("freshers_blogs"):
         logger.info("--- Fetching Indian Fresher Blogs (RSS + Cuvette) ---")
-        raw_jobs.extend(fetch_freshers_blogs())
+        fetch_source("freshers_blogs", lambda: fetch_freshers_blogs())
 
     if source_enabled("yc"):
         logger.info("--- Fetching YC Jobs ---")
-        raw_jobs.extend(fetch_yc())
+        fetch_source("yc", lambda: fetch_yc())
 
     if source_enabled("serper"):
         logger.info("--- Fetching via Serper discovery ---")
-        raw_jobs.extend(fetch_serper_jobs(profile))
+        fetch_source("serper", lambda: fetch_serper_jobs(profile))
 
     if source_enabled("hackernews"):
         logger.info("--- Fetching HackerNews ---")
-        raw_jobs.extend(fetch_hn_hiring())
+        fetch_source("hackernews", lambda: fetch_hn_hiring())
 
     if source_enabled("reddit"):
         logger.info("--- Fetching Reddit ---")
-        raw_jobs.extend(fetch_reddit())
+        fetch_source("reddit", lambda: fetch_reddit())
 
     if source_enabled("naukri"):
         logger.info("--- Fetching Naukri.com ---")
-        raw_jobs.extend(fetch_naukri(profile))
+        fetch_source("naukri", lambda: fetch_naukri(profile))
 
     if source_enabled("hirist"):
         logger.info("--- Fetching Hirist.tech ---")
-        raw_jobs.extend(fetch_hirist(profile))
+        fetch_source("hirist", lambda: fetch_hirist(profile))
 
     if source_enabled("jobicy"):
         logger.info("--- Fetching Jobicy (remote jobs API) ---")
-        raw_jobs.extend(fetch_jobicy())
+        fetch_source("jobicy", lambda: fetch_jobicy())
 
     if source_enabled("remoteok"):
         logger.info("--- Fetching RemoteOK (JSON API) ---")
-        raw_jobs.extend(fetch_remoteok())
+        fetch_source("remoteok", lambda: fetch_remoteok())
 
     if source_enabled("hiringcafe"):
         logger.info("--- Fetching hiring.cafe (Next.js API) ---")
-        raw_jobs.extend(fetch_hiringcafe())
+        fetch_source("hiringcafe", lambda: fetch_hiringcafe())
 
     if source_enabled("telegram_channels"):
         logger.info("--- Fetching Telegram job channels (Telethon MTProto) ---")
-        raw_jobs.extend(fetch_telegram_channels())
+        fetch_source("telegram_channels", lambda: fetch_telegram_channels())
 
     if source_enabled("thejobcompany"):
         logger.info("--- Fetching TheJobCompany (thejobcompany.co.in) ---")
-        raw_jobs.extend(fetch_thejobcompany())
+        fetch_source("thejobcompany", lambda: fetch_thejobcompany())
 
+    logger.info("Source health summary: %s", json.dumps(source_health, sort_keys=True))
     total_raw = len(raw_jobs)
     logger.info(f"Total raw jobs from all sources: {total_raw}")
 
+    from storage import work
+    backlog = [job for _,job in work.pending('score', db_path)]
+    raw_jobs = backlog + raw_jobs
+
     # ── DEDUPLICATION ─────────────────────────────────────────────────────────
-    new_jobs = deduplicate(raw_jobs, db_path)
+    new_jobs = deduplicate(raw_jobs, db_path, profile)
 
     # ── PRE-FILTER ────────────────────────────────────────────────────────────
     # Drops ~90% of remaining jobs with zero AI cost
     eligible_jobs = prefilter(new_jobs, profile)
+    eligible_ids = {work.identity(job) for job in eligible_jobs}
+    for key,_ in work.pending('score',db_path):
+        if key not in eligible_ids:
+            work.remove('score',key,db_path)
+
+    from storage.db import invalidate_job
+    for job in new_jobs:
+        if work.identity(job) not in eligible_ids:
+            invalidate_job(job,db_path)
+    for job in eligible_jobs:
+        work.put('score',work.identity(job),job,db_path)
+    observed_ids = {work.identity(job) for job in new_jobs}
+    for key,_ in work.pending('telegram_job',db_path):
+        if key in observed_ids:
+            work.remove('telegram_job',key,db_path)
 
     if not eligible_jobs:
         logger.info("No new eligible jobs after pre-filter. Done.")
-        send_session_divider(total_raw=total_raw, passed=0, scored=0, urgent=0, chat_id=chat_id)
+        deliver_pending(db_path, chat_id, profile)
+        send_session_divider(total_raw=total_raw, passed=0, scored=0, urgent=0, chat_id=chat_id,
+                             failed=len(work.pending('score',db_path)) + len(work.pending('telegram',db_path)))
+        save_run_stats(datetime.now().isoformat(),total_raw,len(new_jobs),0,0,0,0,{},db_path)
+        send_weekly_summary_if_due(db_path, profile, chat_id)
         return
 
     # ── AI SCORING ────────────────────────────────────────────────────────────
     # score_all() handles:
     #   1. Heuristic relevance ranking (best-fit jobs scored first)
-    #   2. Token budget guard (stops before hitting Groq's 30K TPM)
+    #   2. Bounded enrichment, evaluation cache and durable pending work
     #   3. Hard fallback cap (max_ai_jobs_per_run in profile.yaml)
     urgent_jobs, digest_jobs, low_jobs = score_all(eligible_jobs, profile, db_path)
 
     # ── NOTIFICATIONS ─────────────────────────────────────────────────────────
-    if urgent_jobs:
-        logger.info(f"Sending {len(urgent_jobs)} urgent Telegram alerts")
-        notify_urgent_jobs(urgent_jobs, chat_id)
-        from storage.db import mark_job_notified
-        for job in urgent_jobs:
-            mark_job_notified(job, level=1, db_path=db_path)
+    delivered_urgent, delivered_digest = deliver_pending(db_path, chat_id, profile)
 
     # Session-end divider — always the last message, carries stats for the run.
     # Sent even when urgent=0 so there's always a visible session boundary.
@@ -258,8 +294,10 @@ def run(profile_path: str, dry_run: bool = False):
         total_raw = total_raw,
         passed    = len(eligible_jobs),
         scored    = scored_count,
-        urgent    = len(urgent_jobs),
+        urgent    = delivered_urgent,
         chat_id   = chat_id,
+        digest    = delivered_digest,
+        failed    = len(work.pending("score", db_path)) + len(work.pending("telegram", db_path)),
     )
 
     # ── PERSIST RUN STATS (for weekly summary) ───────────────────────────────

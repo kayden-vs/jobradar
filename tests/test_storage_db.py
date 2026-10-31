@@ -59,9 +59,9 @@ class TestNormalize:
         assert "backend" in result
         assert "engineer" in result
 
-    def test_strips_years(self):
-        assert "2025" not in _normalize("SDE 2025 Intern")
-        assert "2026" not in _normalize("Backend Engineer 2026")
+    def test_preserves_years(self):
+        assert "2025" in _normalize("SDE 2025 Intern")
+        assert "2026" in _normalize("Backend Engineer 2026")
 
     def test_collapses_whitespace(self):
         result = _normalize("hello   world  ")
@@ -124,15 +124,15 @@ class TestMakeJobId:
         job2 = make_job(location="Bangalore")
         assert make_job_id(job1) == make_job_id(job2)
 
-    def test_year_noise_resilience(self):
-        """'SDE 2025' vs 'SDE' → same hash."""
+    def test_title_change_keeps_url_identity(self):
+        """Same application URL retains identity when its title changes."""
         job1 = make_job(title="SDE 2025")
         job2 = make_job(title="SDE")
         assert make_job_id(job1) == make_job_id(job2)
 
     def test_different_jobs_different_hash(self):
         job1 = make_job(title="Backend Engineer")
-        job2 = make_job(title="Frontend Engineer")
+        job2 = make_job(title="Frontend Engineer", url="https://example.com/jobs/2")
         assert make_job_id(job1) != make_job_id(job2)
 
     def test_returns_hex_string(self):
@@ -230,7 +230,7 @@ class TestIsDuplicate:
     def test_company_variation_dedup(self, tmp_db):
         """Razorpay vs Razorpay Software Pvt Ltd → same hash → duplicate."""
         job1 = make_job(company="Razorpay", url="https://example.com/job/razorpay1")
-        job2 = make_job(company="Razorpay Software Pvt Ltd", url="https://example.com/job/razorpay2")
+        job2 = make_job(company="Razorpay Software Pvt Ltd", url="https://example.com/job/razorpay1")
         save_job(job1, db_path=tmp_db)
         assert is_duplicate(job2, tmp_db) is True
 

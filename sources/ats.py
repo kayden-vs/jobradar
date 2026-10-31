@@ -36,9 +36,9 @@ def _fetch_greenhouse_jd(company_slug: str, job_id: int, eu: bool = False) -> st
     Supports both US (boards.greenhouse.io) and EU (boards.eu.greenhouse.io).
     """
     if eu:
-        url = f"https://boards.eu.greenhouse.io/v1/boards/{company_slug}/jobs/{job_id}"
+        url = f"https://boards-api.eu.greenhouse.io/v1/boards/{company_slug}/jobs/{job_id}"
     else:
-        url = f"https://boards.greenhouse.io/v1/boards/{company_slug}/jobs/{job_id}"
+        url = f"https://boards-api.greenhouse.io/v1/boards/{company_slug}/jobs/{job_id}"
     try:
         r = requests.get(url, timeout=10)
         r.raise_for_status()
@@ -59,9 +59,9 @@ def fetch_greenhouse(company_slug: str, eu: bool = False) -> list[dict]:
     The ?content=true param returns the full JD inline, saving one extra API call per job.
     """
     if eu:
-        url = f"https://boards.eu.greenhouse.io/v1/boards/{company_slug}/jobs?content=true"
+        url = f"https://boards-api.eu.greenhouse.io/v1/boards/{company_slug}/jobs?content=true"
     else:
-        url = f"https://boards.greenhouse.io/v1/boards/{company_slug}/jobs?content=true"
+        url = f"https://boards-api.greenhouse.io/v1/boards/{company_slug}/jobs?content=true"
 
     try:
         r = requests.get(url, timeout=10)
@@ -78,7 +78,7 @@ def fetch_greenhouse(company_slug: str, eu: bool = False) -> list[dict]:
             jobs.append({
                 "title":       job.get("title", ""),
                 "company":     company_slug.replace("-", " ").title(),
-                "location":    ", ".join(location_parts) or "Not specified",
+                "location":    ", ".join(location_parts) or job.get("location", {}).get("name", "Not specified"),
                 "description": description,
                 "url":         job.get("absolute_url", ""),
                 "source":      "greenhouse_eu" if eu else "greenhouse",

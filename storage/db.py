@@ -36,7 +36,7 @@ def _normalize(text: str) -> str:
     """Normalise a string for dedup hashing — strips noise that shouldn't
     distinguish two listings of the same job."""
     s = text.lower().strip()
-    s = _YEAR_RE.sub('', s)        # "Backend Engineer 2025" → "Backend Engineer "
+    # Preserve graduation/requisition years.
     s = _PUNCT.sub(' ', s)         # remove punctuation
     s = ' '.join(s.split())        # collapse whitespace
     return s
@@ -58,15 +58,15 @@ def _normalize_location(location: str) -> str:
 # ─────────────────────────────────────────────────────────────────
 
 def make_job_id(job: dict) -> str:
-    """Deterministic hash for deduplication.
+    """Canonical URL identity; requisition or year-preserving metadata fallback.
 
-    Primary key: normalised (title + company + location).
-    Resilient to:
-      - Company name variations: 'Razorpay' vs 'Razorpay Software Pvt Ltd'
-      - Location aliases: 'Bengaluru' vs 'Bangalore'
-      - Year noise in titles: 'SDE 2026' vs 'SDE'
-      - Punctuation / whitespace differences
+    Similar titles are not sufficient to merge different application URLs.
+    Legacy database rows remain accessible through their stored url_id.
     """
+    if job.get('url'):
+        return make_url_id(job)
+    if job.get('requisition_id'):
+        return hashlib.md5((job.get('company','').lower() + ':' + str(job['requisition_id'])).encode()).hexdigest()
     key = (
         _normalize(job.get('title', ''))
         + _normalize_company(job.get('company', ''))
@@ -79,10 +79,15 @@ def make_url_id(job: dict) -> str:
     """Secondary hash based on canonical URL.
     Same URL from two sources = same job, regardless of title variation.
     """
-    url = job.get('url', '').strip().rstrip('/')
-    # Strip common tracking/source params
-    url = re.sub(r'[?&](utm_[^&]+|ref=[^&]+|source=[^&]+)', '', url)
-    return hashlib.md5(url.encode()).hexdigest() if url else ""
+    from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
+    url = job.get('url', '').strip()
+    if not url:
+        return ''
+    parts = urlsplit(url)
+    query = sorted((k,v) for k,v in parse_qsl(parts.query, keep_blank_values=True)
+                   if not k.lower().startswith('utm_') and k.lower() not in {'ref','source'})
+    url = urlunsplit((parts.scheme.lower(), parts.netloc.lower(), parts.path.rstrip('/'), urlencode(query), ''))
+    return hashlib.md5(url.encode()).hexdigest()
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -95,6 +100,7 @@ def init_db(db_path: str | None = None):
     os.makedirs("data", exist_ok=True)
 
     path = _db(db_path)
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
     conn = sqlite3.connect(path)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS jobs (
@@ -124,6 +130,11 @@ def init_db(db_path: str | None = None):
             conn.execute(col_def)
         except Exception:
             pass
+    # Refresh legacy URL hashes without changing primary keys or delivery history.
+    for row_id,url,old_hash in conn.execute('SELECT id,url,url_id FROM jobs').fetchall():
+        canonical = make_url_id({'url':url or ''})
+        if canonical != old_hash:
+            conn.execute('UPDATE jobs SET url_id=? WHERE id=?',(canonical,row_id))
     # Indexes for fast lookups
     conn.execute("CREATE INDEX IF NOT EXISTS idx_url_id ON jobs(url_id)")
 
@@ -208,18 +219,28 @@ def save_job(
 ):
     """Persist a scored job to the database.
 
-    Uses INSERT OR IGNORE — re-inserting the same job never resets
-    the `notified` flag, preventing duplicate Telegram alerts.
+    Updates evaluation evidence while preserving delivery acknowledgements.
+    A listing unseen for 45 days may be surfaced again.
     """
     job_id = make_job_id(job)
     url_id = make_url_id(job)
     conn   = sqlite3.connect(_db(db_path))
+    existing = conn.execute('SELECT id FROM jobs WHERE url_id=?', (url_id,)).fetchone() if url_id else None
+    if existing:
+        job_id = existing[0]
     conn.execute("""
-        INSERT OR IGNORE INTO jobs
+        INSERT INTO jobs
         (id, url_id, title, company, location, description, url, source,
          salary, posted_at, seen_at, score, score_reason, highlights, red_flags,
          notified)
         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        ON CONFLICT(id) DO UPDATE SET
+          title=excluded.title, company=excluded.company, location=excluded.location,
+          description=excluded.description, salary=excluded.salary, posted_at=excluded.posted_at,
+          score=excluded.score, score_reason=excluded.score_reason,
+          highlights=excluded.highlights, red_flags=excluded.red_flags,
+          seen_at=excluded.seen_at,
+          notified=CASE WHEN julianday(jobs.seen_at) < julianday('now','-45 days') THEN 0 ELSE jobs.notified END
     """, (
         job_id, url_id,
         job.get("title", ""),
@@ -476,3 +497,20 @@ def get_all_applications(db_path: str | None = None) -> list[dict]:
         ))
         for row in rows
     ]
+
+
+def pending_notifications(db_path=None) -> list[dict]:
+    """Unsent matches remain deliverable even when discovery deduplicates them."""
+    from datetime import timedelta
+    cutoff = (datetime.now()-timedelta(days=45)).isoformat()
+    with sqlite3.connect(_db(db_path)) as conn:
+        conn.row_factory = sqlite3.Row
+        return [dict(row) for row in conn.execute(
+            'SELECT *, score_reason AS reason FROM jobs WHERE score>=6 AND notified=0 AND seen_at>=? ORDER BY score DESC', (cutoff,))]
+
+
+def invalidate_job(job: dict, db_path: str | None = None) -> None:
+    """Withdraw an old pending match when newer evidence makes it ineligible."""
+    with sqlite3.connect(_db(db_path)) as conn:
+        conn.execute('UPDATE jobs SET score=0, score_reason=? WHERE id=? OR (url_id!=\'\' AND url_id=?)',
+                     ('New evidence failed eligibility/expiry checks', make_job_id(job), make_url_id(job)))

@@ -100,7 +100,7 @@ async def send_job_alert(job: dict, chat_id: str = ""):
                 "Telegram: sent alert for %s @ %s",
                 job.get("title", "?"), job.get("company", "?"),
             )
-            return  # success
+            return True  # confirmed delivery
         except Exception as e:
             last_err = e
             if attempt < _MAX_RETRIES:
@@ -122,8 +122,10 @@ async def send_job_alert(job: dict, chat_id: str = ""):
         newline = "\n"
         plain   = f"{title} @ {company} | Score: {score}/10{newline}{url}"
         await bot.send_message(chat_id=effective_chat_id, text=plain)
+        return True
     except Exception as e2:
-        logger.error("Telegram plain-text fallback also failed: %s", e2)
+        logger.error("Telegram plain-text fallback also failed (%s)", type(e2).__name__)
+        return False
 
 
 async def _send_run_summary_async(
@@ -132,6 +134,8 @@ async def _send_run_summary_async(
     scored: int,
     urgent: int,
     chat_id: str = "",
+    digest: int = 0,
+    failed: int = 0,
 ):
     """Async implementation of the run-summary Telegram message."""
     from datetime import datetime, timezone, timedelta
@@ -145,15 +149,16 @@ async def _send_run_summary_async(
     date_str = now.strftime("%-d %b")   # e.g. "29 May"
     time_str = now.strftime("%H:%M")    # e.g. "19:52"
 
-    digest = scored - urgent  # non-urgent scored jobs to review
+
     if urgent == 0:
         urgent_line = "✅ No urgent alerts today"
     else:
-        urgent_line = f"\U0001f6a8 Scroll up \u2014 {urgent} high\-priority job\(s\) above\!"
+        urgent_line = _esc(f"🚨 Scroll up — {urgent} high-priority job(s) above!")
 
     msg = (
         f"🔥 {_esc(urgent)} urgent · {_esc(digest)} to review — JobRadar {_esc(date_str)}\n"
         f"📥 {_esc(total_raw)} fetched → {_esc(passed_filter)} filtered → {_esc(scored)} scored\n"
+        f"⏳ {_esc(failed)} evaluations deferred\n"
         f"{urgent_line}\n"
         f"🕐 {_esc(time_str)} IST"
     )
@@ -166,7 +171,7 @@ async def _send_run_summary_async(
                 text       = msg,
                 parse_mode = ParseMode.MARKDOWN_V2,
             )
-            return  # success
+            return True  # confirmed delivery
         except Exception as e:
             last_err = e
             if attempt < _MAX_RETRIES:
@@ -201,6 +206,8 @@ def send_session_divider(
     scored:    int,
     urgent:    int,
     chat_id:   str = "",
+    digest: int = 0,
+    failed: int = 0,
 ):
     """
     Synchronous wrapper around the async run-summary message.
@@ -213,4 +220,57 @@ def send_session_divider(
         scored        = scored,
         urgent        = urgent,
         chat_id       = chat_id,
+        digest        = digest,
+        failed        = failed,
     ))
+
+
+def deliver_pending(db_path: str, chat_id: str = '', profile: dict | None = None) -> tuple[int, int]:
+    """Send urgent alerts and compact digest chunks; acknowledge successful sends only."""
+    from storage.db import pending_notifications, mark_job_notified
+    async def send():
+        from storage.db import make_url_id
+        rows = list({make_url_id(j): j for j in pending_notifications(db_path)}.values())
+        if profile is not None:
+            from pipeline.prefilter import prefilter
+            rows = prefilter(rows, profile)
+        rows = [j for j in rows if j.get("url", "").startswith(("https://", "http://"))]
+        urgent = [j for j in rows if j['score'] >= 8]
+        digest = [j for j in rows if 6 <= j['score'] < 8]
+        sent_urgent = sent_digest = 0
+        for job in urgent:
+            try:
+                if await send_job_alert(job, chat_id):
+                    mark_job_notified(job, 1, db_path)
+                    sent_urgent += 1
+            except Exception as exc:
+                logger.error('Alert delivery deferred (%s)', type(exc).__name__)
+            await asyncio.sleep(1)
+        # Plain text avoids Markdown URL parsing failures; keep chunks well below 4096.
+        chunks, chunk, size = [], [], 0
+        for job in digest:
+            line = f"{job['score']}/10 {job['title'][:140]} @ {job['company'][:100]}\n{job['url'][:1200]}\n"
+            if size + len(line) > 3000:
+                chunks.append(chunk)
+                chunk, size = [], 0
+            chunk.append((job,line))
+            size += len(line)
+        if chunk:
+            chunks.append(chunk)
+        for chunk in chunks:
+            for attempt in range(_MAX_RETRIES):
+                try:
+                    async with Bot(token=TELEGRAM_BOT_TOKEN) as bot:
+                        await bot.send_message(chat_id=chat_id or TELEGRAM_CHAT_ID,
+                            text='JobRadar — worthwhile matches\n\n' + '\n'.join(line for _,line in chunk),
+                            disable_web_page_preview=True)
+                    for job,_ in chunk:
+                        mark_job_notified(job, 2, db_path)
+                        sent_digest += 1
+                    break
+                except Exception as exc:
+                    logger.warning('Digest delivery failed (%s)', type(exc).__name__)
+                    if attempt < _MAX_RETRIES-1:
+                        await asyncio.sleep(_RETRY_DELAYS[attempt])
+        return sent_urgent, sent_digest
+    return asyncio.run(send())

@@ -1,3 +1,4 @@
+from pipeline.source_policy import ATS_SOURCES, source_family
 import yaml
 import re
 import logging
@@ -187,24 +188,20 @@ def check_experience(description: str, title: str, profile: dict) -> tuple[bool,
     Reject if any hard-reject experience keyword is found, or if a regex
     pattern detects 2+ years experience requirement.
     """
-    text = (description + " " + title).lower()
-
-    for kw in (profile["hard_reject"].get("experience_keywords") or []):
-        if kw.lower() in text:
-            return True, f"Experience keyword: '{kw}'"
-
-    year_patterns = [
-        r'\b([2-9]|\d{2,})\+?\s*years?\s*(of\s+)?(experience|exp)\b',
-        r'experience[:\s]+([2-9]|\d{2,})\+?\s*years?',
-        r'minimum\s+([2-9]|\d{2,})\s*years?',
-        r'([2-9]|\d{2,})\+\s*yrs?\b',
-    ]
-    for pat in year_patterns:
-        m = re.search(pat, text)
-        if m:
-            return True, f"Experience regex: {m.group(0)}"
-
-    return False, ""
+    senior = re.search(r'\b(senior|sr\.?|staff|principal|lead|director|head|architect|manager)\b', title, re.I)
+    if senior:
+        return True, 'Seniority in title: ' + senior.group()
+    if re.search(r'(?:looking for|hiring|seeking)\s+(?:a\s+)?(?:senior|staff|principal)\s+(?:engineer|developer)', description, re.I):
+        return True, 'Senior candidate explicitly sought'
+    cap = profile.get('candidate', {}).get('experience', {}).get('max_required', 1)
+    # Numeric requirements must refer to experience, not degree duration or team tenure.
+    for match in re.finditer(r"(?:(?:minimum|at least|required)\s+)?(\d+)(?:\s*[-–]\s*\d+)?\+?\s*(?:years?|yrs?)\s+(?:of\s+)?(?:(?:[A-Za-z+#.]+)\s+){0,3}(?:experience|exp)\b", description, re.I):
+        context = description[max(0,match.start()-70):match.start()].lower()
+        if re.search(r'(?:alongside|team|mentor|colleagues|preferred|nice to have)[^.;]*$', context):
+            continue
+        if int(match.group(1)) > cap:
+            return True, 'Required experience: ' + match.group()
+    return False, ''
 
 
 def check_location(description: str, title: str, profile: dict) -> tuple[bool, str]:
@@ -273,7 +270,7 @@ def check_has_meaningful_title(job: dict) -> tuple[bool, str]:
 
 # ATS sources that return structured, machine-readable job data.
 # Used to apply stricter filters that don't make sense for RSS/blog sources.
-_ATS_SOURCES = {"greenhouse", "greenhouse_eu", "lever", "ashby", "workable", "workday"}
+_ATS_SOURCES = ATS_SOURCES
 
 # Sources with freeform but curated titles (not ATS but not open blog text either).
 # These get their own strict mode — see _INTERNSHALA_TITLE_RE below.
@@ -471,6 +468,23 @@ def check_title_relevance(title: str, source: str = "") -> tuple[bool, str]:
     return False, ""
 
 
+def check_education(job: dict, profile: dict) -> tuple[bool, str]:
+    text = job.get('title','') + '. ' + job.get('description','')
+    if re.search(r'\bph\.?d\.?\s+(?:intern|student|candidate)|(?:must|required)\s+(?:have|be|hold)?[^.;]{0,35}\bph\.?d', text, re.I):
+        if not re.search(r'ph\.?d', profile.get('candidate',{}).get('education',{}).get('degree',''), re.I):
+            return True, 'PhD required'
+    year = re.search(r'20\d{2}', profile.get('candidate',{}).get('education',{}).get('graduation',''))
+    if year:
+        for sentence in re.split(r'[.\n;]', text):
+            if re.search(r'\b(batch|graduates?|graduating|graduation|pass.?outs?)\b', sentence, re.I) and re.search(r'\b(only|eligible|must|required)\b', sentence, re.I):
+                years = {int(y) for y in re.findall(r'20\d{2}',sentence)}
+                for lo,hi in re.findall(r'(20\d{2})\s*[-–]\s*(20\d{2})',sentence):
+                    years.update(range(int(lo),int(hi)+1))
+                if years and int(year.group()) not in years:
+                    return True, 'Graduation year excluded by explicit eligibility'
+    return False, ''
+
+
 def check_no_description(job: dict) -> tuple[bool, str]:
     """
     If a job has absolutely no description AND no meaningful title
@@ -534,8 +548,10 @@ def check_ats_location(job: dict) -> tuple[bool, str]:
     if not location or location.lower() == "not specified":
         return False, ""  # No location info — benefit of the doubt
 
-    # Accept signals take priority
-    if _ATS_ACCEPT_LOCATION_PATTERNS.search(location):
+    # India/worldwide takes priority for multi-location openings. Remote alone
+    # cannot override an explicit foreign hiring geography.
+    india = re.search(r'\b(india|bangalore|bengaluru|mumbai|hyderabad|delhi|pune|chennai|kolkata|noida|gurgaon|gurugram|worldwide|anywhere)\b', location, re.I)
+    if india:
         return False, ""
 
     # Reject signals
@@ -676,6 +692,8 @@ def prefilter(jobs: list[dict], profile: dict) -> list[dict]:
     # not the first-fetched ones. This value only prevents runaway single-company floods.
     ats_prefilter_safety_cap = hard_reject_cfg.get("ats_prefilter_safety_cap", 100)
 
+    from collections import Counter
+    rejection_counts = Counter()
     passed = []
     company_counts: dict[str, int] = {}  # tracks ATS jobs per company
     source_counts: dict[str, tuple[int, int]] = {}  # source -> (total, passed)
@@ -706,6 +724,7 @@ def prefilter(jobs: list[dict], profile: dict) -> list[dict]:
             check_ats_location(job),                   # ATS: location field (US/UK/EU reject)
             check_title_relevance(title, source),      # ATS: strict allow-list; non-ATS: lenient
             # ── RSS tag checks ────────────────────────────────────────────
+            check_education(job, profile),
             check_rss_tags(job),                       # Zero-cost: RSS tag exp/location filter
             # ── Description keyword scans (slower) ───────────────────────
             check_experience(description, title, profile),  # Overqualified
@@ -716,6 +735,7 @@ def prefilter(jobs: list[dict], profile: dict) -> list[dict]:
         for should_reject, reason in checks:
             if should_reject:
                 logger.debug(f"REJECTED '{title}' @ '{company}': {reason}")
+                rejection_counts[reason.split(":")[0]] += 1
                 rejected = True
                 break
 
@@ -741,6 +761,8 @@ def prefilter(jobs: list[dict], profile: dict) -> list[dict]:
             company_counts[company] = count + 1
 
         passed.append(job)
+
+    logger.info("Filter rejection reasons: %s", dict(rejection_counts))
 
     # Summarise safety-cap hits
     capped_companies = [c for c, n in company_counts.items() if n >= ats_prefilter_safety_cap]

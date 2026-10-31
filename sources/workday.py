@@ -425,6 +425,7 @@ def fetch_workday(
                 "description": stub_desc,
                 "url":         _build_job_url(tenant, wd_server, site, external_path),
                 "source":      "workday",
+                "description_complete": False,
                 "salary":      "",
                 "posted_at":   posted_on,
                 "job_req_id":  job_req_id,

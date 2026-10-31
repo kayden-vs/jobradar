@@ -18,22 +18,8 @@ sleep 10  # wait for network
 cd /home/ubuntu/jobradar
 source venv/bin/activate
 
-# Pull latest code before running
-echo "Pulling latest code: $(date)" >> "$LOG_FILE"
-git pull >> "$LOG_FILE" 2>&1
-if [ $? -ne 0 ]; then
-    echo "WARNING: git pull failed, continuing with existing code" >> "$LOG_FILE"
-fi
-
-# update packages
-echo "updating packages with pip" >> "$LOG_FILE"
-pip install -r requirements.txt >> "$LOG_FILE" 2>&1
-if [ $? -ne 0 ]; then
-    echo "WARNING: pip install failed, continuing with existing code" >> "$LOG_FILE"
-fi
-
-# kill Python after 60 minutes if it hangs
-timeout 3600 python main.py
+# Deploy and install dependencies separately. This wrapper is EC2-specific.
+scripts/run_pipeline.sh
 EXIT_CODE=$?
 
 if [ $EXIT_CODE -eq 124 ]; then

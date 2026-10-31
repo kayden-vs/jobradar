@@ -162,6 +162,7 @@ def fetch_internshala() -> list[dict]:
                     "description": f"{title} at {company}. Location: {location}. Stipend: {stipend}",
                     "url":         job_url,
                     "source":      "internshala",
+                    "description_complete": False,
                     "salary":      stipend,
                     "posted_at":   "",   # Internshala doesn't expose exact dates in listing
                 })

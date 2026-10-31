@@ -1,3 +1,4 @@
+from pipeline.ai import client as ai_client, generate, MODEL as AI_MODEL
 """
 sources/telegram_channels.py — Fetch job posts from Indian Telegram channels via Telethon.
 
@@ -241,7 +242,7 @@ def _gemini_client() -> genai.Client:
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
         raise RuntimeError("GEMINI_API_KEY is not set in .env")
-    return genai.Client(api_key=api_key)
+    return ai_client()
 
 
 def _parse_posts_with_gemini(
@@ -261,9 +262,20 @@ def _parse_posts_with_gemini(
     Returns list of job dicts with keys: title, company, location,
     description, url, salary, source, posted_at.
     """
-    if not posts:
-        return []
 
+    from storage import work
+    import hashlib
+    db_path = os.getenv('JOBRADAR_DB_PATH')
+    buffered = {hashlib.sha256((text + date.isoformat() + channel).encode()).hexdigest(): [text,date.isoformat(),channel]
+                for text,date,channel in posts}
+    completed = {key for key,_ in work.pending('telegram_done',db_path)}
+    for key,payload in buffered.items():
+        if key in completed:
+            continue
+        work.put('telegram',key,payload,db_path)
+    posts = [(text, datetime.fromisoformat(date), channel) for _,(text,date,channel) in work.pending('telegram',db_path)]
+    if not posts:
+        return [job for _,job in work.pending('telegram_job',db_path)]
     client = _gemini_client()
     all_jobs: list[dict] = []
     batch_size = 5
@@ -285,7 +297,7 @@ def _parse_posts_with_gemini(
 
         # Respect shared Gemini rate limit (4.5s inter-call interval)
         # This prevents collisions with scorer.py and hackernews.py calls.
-        gemini_throttle()
+        # Shared throttle is applied to every actual attempt by generate().
 
         prompt = f"""You are extracting job postings from Indian Telegram job channels.
 
@@ -297,6 +309,7 @@ Return ONLY a valid JSON array. Skip posts with no job listing.
 If no jobs found at all, return [].
 
 For each job, extract:
+- post_index: 1-based index of the source post in this batch (required)
 - title: the exact job title from the post (e.g. "Backend Engineering Intern", "SDE-1", "Software Engineer")
 - company: the name of the COMPANY hiring (NOT the channel name). Use "" if not mentioned.
 - location: city or "Remote" or "India" if unclear
@@ -315,8 +328,8 @@ Posts:
 {combined}"""
 
         try:
-            response = client.models.generate_content(
-                model=GEMINI_MODEL,
+            response = generate(client,
+                model=AI_MODEL,
                 contents=prompt,
                 config=types.GenerateContentConfig(
                     system_instruction=(
@@ -344,7 +357,8 @@ Posts:
 
             jobs_raw = json.loads(text_response)
             if not isinstance(jobs_raw, list):
-                jobs_raw = []
+                raise ValueError("Expected extraction array")
+            batch_jobs = []
 
             for idx_j, job in enumerate(jobs_raw):
                 if not isinstance(job, dict):
@@ -359,7 +373,10 @@ Posts:
                 # the date of the batch's first post as a safe approximation.
                 # (Exact mapping would require Gemini to output a post_index
                 # field — not worth the prompt complexity.)
-                post_date = batch[0][1] if batch else datetime.now(timezone.utc)
+                post_index = job.get('post_index')
+                if type(post_index) is not int or not 1 <= post_index <= len(batch):
+                    raise ValueError('Extraction missing valid post_index')
+                original_text, post_date, channel = batch[post_index-1]
 
                 # Reject if Gemini hallucinated the channel name as company
                 company_raw = job.get("company", "").strip()
@@ -369,23 +386,31 @@ Posts:
                 if len(company_raw) <= 1:
                     company_raw = ""
 
-                all_jobs.append({
+                batch_jobs.append({
                     "title":       title,
                     "company":     company_raw,
                     "location":    job.get("location", "India").strip() or "India",
-                    "description": job.get("description", "").strip(),
+                    "description": original_text,
                     "url":         job.get("url", "").strip(),
                     "salary":      job.get("salary", "").strip(),
                     "source":      "telegram_channels",
                     "posted_at":   post_date.isoformat(),
                 })
 
+            for extracted in batch_jobs:
+                work.put('telegram_job',work.identity(extracted),extracted,db_path)
+            all_jobs.extend(batch_jobs)
+            for raw_text, date, channel in batch:
+                key = hashlib.sha256((raw_text+date.isoformat()+channel).encode()).hexdigest()
+                work.put('telegram_done',key,{'done':True},db_path)
+                work.remove('telegram',key,db_path)
+
         except json.JSONDecodeError as e:
             logger.warning(f"Telegram AI batch {i}: JSON parse error — {e}")
         except Exception as e:
             logger.warning(f"Telegram AI batch {i}: extraction failed — {e}")
 
-    return all_jobs
+    return [job for _,job in work.pending('telegram_job',db_path)]
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -447,9 +472,6 @@ def fetch_telegram_channels() -> list[dict]:
         f"Telegram channels: {len(filtered_posts)}/{total_raw} posts passed sanity filter"
     )
 
-    if not filtered_posts:
-        logger.info("Telegram channels: no posts survived sanity filter")
-        return []
 
     # ── Step 3: AI extraction → structured job dicts ─────────────────────
     jobs = _parse_posts_with_gemini(filtered_posts)

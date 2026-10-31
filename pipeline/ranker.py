@@ -1,3 +1,4 @@
+from pipeline.source_policy import ATS_SOURCES, source_family
 """
 pipeline/ranker.py
 ──────────────────
@@ -235,11 +236,11 @@ _EXP_REQUIREMENT_DESC_RE = re.compile(
 )
 
 # ATS sources with structured, reliable location/title fields
-_ATS_SOURCES = {"greenhouse", "greenhouse_eu", "lever", "ashby", "workable", "workday"}
+_ATS_SOURCES = ATS_SOURCES
 
 # Sources where description is lazy-fetched AFTER ranking.
 # These must NOT be penalized for short/empty descriptions at rank time.
-_LAZY_FETCH_SOURCES = {"workday", "naukri"}
+_LAZY_FETCH_SOURCES = {"workday", "naukri", "internshala", "thejobcompany"}
 # freshers_blogs is prefix-matched separately (source starts with "freshers_blogs")
 
 # Internshala stipend extraction
@@ -550,37 +551,19 @@ def _recency_bonus(posted_at: str | None, w: dict) -> int:
 
     s = str(posted_at).strip().lower()
 
-    # Fast path: relative strings — avoids dateutil parse for common cases
-    relative_map = [
-        (r'\btoday\b|\b[0-9]?\s*hour[s]?\s+ago\b|\bminute[s]?\s+ago\b', w["recency_7d"]),
-        (r'\b[1-6]\s*day[s]?\s+ago\b|\byesterday\b',                     w["recency_7d"]),
-        (r'\b[7-9]\s*day[s]?\s+ago\b|\b1\s*week\s+ago\b',               w["recency_14d"]),
-        (r'\b10\s*day[s]?\s+ago\b',                                      w["recency_14d"]),
-        (r'\b1[1-9]\s*day[s]?\s+ago\b|\b[2-9][0-9]\s*day[s]?\s+ago\b',  w.get("penalty_old_job", -10)),
-        (r'\b[1-9]\s*month[s]?\s+ago\b',                                 w.get("penalty_old_job", -10)),
-        (r'\byear[s]?\s+ago\b',                                          w.get("penalty_old_job", -10)),
-        (r'\b2024\b|\b2025\b',                                           w.get("penalty_old_job", -10)),
-    ]
-    for pattern, bonus in relative_map:
-        if re.search(pattern, s):
-            return bonus
-
-    # ISO / epoch parse fallback
-    try:
-        from dateutil import parser as dateutil_parser
-        dt = dateutil_parser.parse(str(posted_at))
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        age_days = (datetime.now(timezone.utc) - dt).days
-        if age_days <= 7:
-            return w["recency_7d"]
-        if age_days <= 14:
-            return w["recency_14d"]
-        if age_days <= 30:
-            return w["recency_30d"]
-    except Exception:
-        pass
-
+    from pipeline.prefilter import _parse_posted_at
+    dt = _parse_posted_at(str(posted_at))
+    if dt is None:
+        return 0
+    age_days = (datetime.now(timezone.utc) - dt).days
+    if age_days < 0:
+        return 0
+    if age_days <= 7:
+        return w['recency_7d']
+    if age_days <= 14:
+        return w['recency_14d']
+    if age_days <= 30:
+        return w['recency_30d']
     return 0
 
 

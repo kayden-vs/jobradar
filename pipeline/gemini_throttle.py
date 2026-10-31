@@ -18,10 +18,13 @@ Rate limit math (gemini-3.1-flash-lite free tier):
 """
 import time
 import logging
+import os
+import threading
 logger = logging.getLogger(__name__)
 # Seconds between any two Gemini API calls across the entire process.
 # 60 / 4.5 = 13.3 req/min — comfortably below the 15 RPM free-tier ceiling.
-REQ_INTERVAL: float = 4.5
+REQ_INTERVAL: float = max(4.5, float(os.getenv("GEMINI_REQUEST_INTERVAL", "4.5")))
+_lock = threading.Lock()
 # Process-level last-call timestamp. A single float shared by all callers
 # in the same Python process (hackernews parser + job scorer).
 _last_call_ts: float = 0.0
@@ -33,9 +36,8 @@ def gemini_throttle() -> None:
     call Gemini at the same time), so a bare global is sufficient here.
     """
     global _last_call_ts
-    elapsed = time.time() - _last_call_ts
-    if elapsed < REQ_INTERVAL:
-        wait = REQ_INTERVAL - elapsed
-        logger.debug(f"Gemini throttle: sleeping {wait:.2f}s")
-        time.sleep(wait)
-    _last_call_ts = time.time()
+    with _lock:
+        elapsed = time.monotonic() - _last_call_ts
+        if elapsed < REQ_INTERVAL:
+            time.sleep(REQ_INTERVAL - elapsed)
+        _last_call_ts = time.monotonic()

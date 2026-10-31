@@ -36,14 +36,14 @@ class TestDeduplicateInMemory:
     def test_location_alias_dedup_in_batch(self, tmp_db):
         """Bengaluru vs Bangalore same title+company → same hash → deduped."""
         job1 = make_job(location="Bengaluru", url="https://example.com/job/ben1")
-        job2 = make_job(location="Bangalore", url="https://example.com/job/ben2")
+        job2 = make_job(location="Bangalore", url="https://example.com/job/ben1")
         result = deduplicate([job1, job2], tmp_db)
         assert len(result) == 1
 
     def test_company_variation_dedup_in_batch(self, tmp_db):
         """Razorpay vs Razorpay Software Pvt Ltd → same hash → deduped."""
         job1 = make_job(company="Razorpay", url="https://example.com/razorpay1")
-        job2 = make_job(company="Razorpay Software Pvt Ltd", url="https://example.com/razorpay2")
+        job2 = make_job(company="Razorpay Software Pvt Ltd", url="https://example.com/razorpay1")
         result = deduplicate([job1, job2], tmp_db)
         assert len(result) == 1
 

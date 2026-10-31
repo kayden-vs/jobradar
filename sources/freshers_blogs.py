@@ -303,7 +303,7 @@ def _fetch_rss(source_label: str, feed_url: str) -> list[dict]:
             experience_tags = [t for t in tags if
                                any(x in t.lower() for x in ("year", "0-1", "0 - 1"))]
             batch_tags      = [t for t in tags if
-                               any(x in t.lower() for x in ("batch", "2024", "2025", "2026"))]
+                               "batch" in t.lower() or re.search(r"\b20\d{2}\b", t)]
             location_tags   = [t for t in tags if
                                any(city in t.lower() for city in _INDIA_CITIES)]
             # role_tags = all tags (full list for prefilter inspection)
@@ -322,6 +322,7 @@ def _fetch_rss(source_label: str, feed_url: str) -> list[dict]:
                 "title":           raw_title,
                 "company":         company,
                 "location":        location,
+                "description_complete": False,
                 "description":     summary,   # empty/partial — scorer lazy-fetches if needed
                 "url":             url,
                 "source":          f"freshers_blogs/{source_label}",

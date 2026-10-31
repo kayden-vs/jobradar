@@ -1,3 +1,4 @@
+from unittest.mock import patch
 """
 tests/test_sources_naukri.py — Unit tests for sources/naukri.py
 
@@ -204,7 +205,7 @@ class TestFetchNaukriSmoke:
                         {"type": "experience", "label": "0-1 Yrs"},
                     ],
                     "jobDesc": "<p>Build APIs with Go.</p>",
-                    "addDate": "2026-05-01 12:00:00.0",
+                    "addDate": __import__("datetime").datetime.now().isoformat(),
                     "showSal": "n",
                 }
             ],
@@ -247,7 +248,9 @@ class TestFetchNaukriSmoke:
             for job in jobs:
                 assert job["source"] == "naukri"
 
-    def test_empty_profile_naukri_config_handled(self):
+    @patch("sources.naukri._get_with_backoff", return_value=None)
+    @patch("sources.naukri.time.sleep")
+    def test_empty_profile_naukri_config_handled(self, mock_sleep, mock_get):
         """Profile without naukri config should return empty list without raising."""
         profile = {}
         from sources.naukri import fetch_naukri

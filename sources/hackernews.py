@@ -1,3 +1,4 @@
+from pipeline.ai import client as ai_client, generate, MODEL as AI_MODEL
 import requests
 import logging
 import json
@@ -20,7 +21,7 @@ def _gemini_client() -> genai.Client:
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
         raise RuntimeError("GEMINI_API_KEY is not set in .env")
-    return genai.Client(api_key=api_key)
+    return ai_client()
 
 
 def _throttle():
@@ -158,7 +159,7 @@ def parse_comments_with_ai(comments: list[str]) -> list[dict]:
         batch    = comments[i:i + batch_size]
         combined = "\n\n---\n\n".join(batch)
 
-        _throttle()
+        # generate() handles the shared throttle for every attempt.
 
         prompt = f"""Extract ALL job opportunities from these HackerNews 'Who is Hiring' comments.
 Each comment is separated by ---.
@@ -178,8 +179,8 @@ Comments:
 {combined[:4000]}"""
 
         try:
-            response = client.models.generate_content(
-                model=GEMINI_MODEL,
+            response = generate(client,
+                model=AI_MODEL,
                 contents=prompt,
                 config=types.GenerateContentConfig(
                     system_instruction="You extract job postings from text. Always respond with a valid JSON array only.",

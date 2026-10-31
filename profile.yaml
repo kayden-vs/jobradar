@@ -21,6 +21,7 @@ sources:
   jobicy:         true   # Jobicy.com — free remote jobs API, good for catching remote-first companies open to India
   remoteok:       true   # RemoteOK — JSON API, dev/engineering jobs from global startups open to India timezone
   hiringcafe:     true   # hiring.cafe — aggregated ATS jobs via Next.js API, rich structured data, entry-level filtered
+  thejobcompany: true  # India listings; details fetched only for shortlist
   telegram_channels: true  # Indian Telegram job channels via Telethon MTProto API (requires one-time login: tools/telethon_login.py)
                             # Needs: TELEGRAM_API_ID, TELEGRAM_API_HASH, TELEGRAM_SESSION_STRING in .env
 
@@ -148,6 +149,7 @@ candidate:
 hard_reject:
   max_job_age_days: 45              # Tightened: reject jobs older than 45 days
   ats_per_company_cap: 25           # Max ATS jobs per company per run (prevents LinkedIn/Spotify dominance)
+  max_detail_fetches_per_run: 60    # Bound detail requests; incomplete jobs retry next run
   max_ai_jobs_per_run: 150          # Raised from 130 → 150 after v6 free-tier audit.
                                     # Rate limit math (gemini-3.1-flash-lite free tier):
                                     #   150 jobs × 4.5s = 11.25 min scoring phase (+1.5 min vs 130)
@@ -269,7 +271,8 @@ hirist:
   # Set true to fetch full JDs from /j/ detail pages (slower, higher quality)
   fetch_details: true
 
-# Scoring weights (used in AI prompt)
+# Legacy scoring weights retained for config compatibility.
+# The active calibrated rubric is in pipeline/scorer.py; these values are not applied.
 scoring_weights:
   golang_mentioned: +2
   typescript_mentioned: +1
@@ -368,8 +371,6 @@ ranker_weights:
   source_internshala_stipend_min:    10000  # INR/month threshold for stipend bonus
   source_freshers_blog_batch_bonus:  3      # freshers_blogs job + matching batch tag (buffed: blog descriptions are stubs so this is the main signal)
   source_freshers_blog_batches:             # Graduation years that match the candidate
-    - 2025
-    - 2026
     - 2027
   source_naukri_stub_penalty:       -1     # Naukri job with stub description (lazy-fetch pending)
   source_naukri_stub_threshold:      150   # Chars below which Naukri desc is treated as a stub

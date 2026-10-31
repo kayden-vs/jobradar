@@ -423,6 +423,7 @@ def _fetch_search_page(
             "description":     snippet,          # placeholder, replaced by full JD
             "url":             url_str,
             "source":          "naukri",
+                "description_complete": False,
             "salary":          salary,
             "posted_at":       posted_at,
             # Extra Naukri metadata — useful for scorer context
@@ -433,7 +434,7 @@ def _fetch_search_page(
             "max_exp":         str(max_exp) if max_exp is not None else "",
         })
 
-    logger.debug(
+    logger.info(
         "Naukri search p%d %r / %r: %d cards -> %d passed (exp_rejected=%d age_rejected=%d)",
         page_no, keyword, location, len(job_list), len(survivors),
         exp_rejected, age_rejected,

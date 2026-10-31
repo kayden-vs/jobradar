@@ -106,6 +106,7 @@ _HEADERS = {
 
 # Reusable session for keep-alive connections
 _session: requests.Session | None = None
+_rate_limited_until = 0.0
 
 
 def _get_session() -> requests.Session:
@@ -166,9 +167,25 @@ def _fetch(url: str) -> BeautifulSoup | None:
       - HTTP 4xx/5xx -> logs warning, returns None
       - Malformed HTML -> BeautifulSoup still parses what it can (lxml is lenient)
     """
+    global _rate_limited_until
+    if time.monotonic() < _rate_limited_until:
+        return None
     session = _get_session()
     try:
         resp = session.get(url, timeout=REQUEST_TIMEOUT)
+        if resp.status_code == 429:
+            try:
+                delay = max(60, float(resp.headers.get('Retry-After', 60)))
+            except (TypeError, ValueError):
+                from email.utils import parsedate_to_datetime
+                from datetime import datetime, timezone
+                try:
+                    delay = max(60, (parsedate_to_datetime(resp.headers.get('Retry-After','')) - datetime.now(timezone.utc)).total_seconds())
+                except (TypeError, ValueError):
+                    delay = 60
+            _rate_limited_until = time.monotonic() + delay
+            logger.warning('[%s] Rate limited; details deferred for %.0fs', SOURCE_NAME, delay)
+            return None
         resp.raise_for_status()
         return BeautifulSoup(resp.text, "html.parser")
         # NOTE: html.parser (not lxml) is required. The site's HTML has a
@@ -556,54 +573,14 @@ def fetch_thejobcompany() -> list[dict]:
         f"({duplicates_removed} cross-category duplicates removed)"
     )
 
-    # ── Step 3: Fetch detail pages ────────────────────────────────────────────
-    final_jobs: list[dict] = []
-    detail_fetches  = 0
-    detail_failures = 0
-
+    # Defer detail requests until the job reaches the bounded scoring shortlist.
+    final_jobs = []
     for job in unique_partials:
-        if detail_fetches >= _MAX_DETAIL_FETCHES:
-            logger.warning(
-                f"[{SOURCE_NAME}] Detail fetch cap ({_MAX_DETAIL_FETCHES}) reached — "
-                f"remaining jobs kept with listing-page metadata only"
-            )
-            final_jobs.append(_finalise_job(job))
-            continue
-
-        job_id = job.get("_tjc_job_id", "")
-        url    = job.get("url", "")
-
-        if url and job_id:
-            if detail_fetches > 0:
-                time.sleep(REQUEST_DELAY_DETAIL)
-
-            detail_soup = _fetch(url)
-            detail_fetches += 1
-
-            if detail_soup is not None:
-                enriched = _parse_detail_page(detail_soup, job_id)
-                job.update(enriched)
-            else:
-                detail_failures += 1
-                logger.debug(
-                    f"[{SOURCE_NAME}] Detail fetch failed for job_id={job_id} — "
-                    "keeping listing-page metadata"
-                )
-
-        # Ensure description is non-empty even if detail fetch was skipped/failed
-        if not job.get("description"):
-            job["description"] = _build_fallback_description(job)
-
+        job['description_complete'] = False
+        if not job.get('description'):
+            job['description'] = _build_fallback_description(job)
         final_jobs.append(_finalise_job(job))
-
-    logger.info(
-        f"[{SOURCE_NAME}] Detail fetches: {detail_fetches} attempted, "
-        f"{detail_failures} failed, "
-        f"{detail_fetches - detail_failures} successful"
-    )
-    logger.info(
-        f"[{SOURCE_NAME}] Final: {len(final_jobs)} jobs ready for pipeline"
-    )
+    logger.info('[%s] Final: %d listings; details deferred', SOURCE_NAME, len(final_jobs))
 
     return final_jobs
 
@@ -659,6 +636,7 @@ def _finalise_job(job: dict) -> dict:
         "description": desc,
         "url":         job.get("url", ""),
         "source":      SOURCE_NAME,
+        "description_complete": job.get("description_complete", False),
         "salary":      job.get("salary", ""),
         "posted_at":   job.get("posted_at", ""),
     }
