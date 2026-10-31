@@ -298,6 +298,18 @@ def lazy_fetch_workday_detail(job: dict) -> str:
             if country_name:
                 job["country"] = country_name
 
+        # List results often say only "2 Locations". Preserve every actual
+        # location and country so foreign remote roles cannot masquerade as global.
+        locations = [jpi.get('location','')]
+        additional = jpi.get('additionalLocations') or []
+        if isinstance(additional,list):
+            locations.extend(value for value in additional if isinstance(value,str))
+        if isinstance(country_info,dict):
+            locations.append(country_info.get('descriptor',''))
+        if any(locations):
+            job['location'] = ' / '.join(dict.fromkeys(value for value in locations if value))
+        if jpi.get('canApply') is False:
+            plain_desc = 'Application closed. ' + plain_desc
         return plain_desc
 
     except Exception as e:
@@ -314,6 +326,8 @@ def fetch_workday(
     tenant: str,
     wd_server: str,
     site: str,
+    search_text: str = "",
+    applied_facets: dict | None = None,
 ) -> list[dict]:
     """
     Fetch jobs from a single Workday company's career portal.
@@ -340,10 +354,10 @@ def fetch_workday(
 
     while total_fetched < _MAX_JOBS_PER_COMPANY:
         payload = {
-            "appliedFacets": {},
+            "appliedFacets": applied_facets or {},
             "limit": _PAGE_SIZE,
             "offset": offset,
-            "searchText": "",
+            "searchText": search_text,
         }
 
         resp = _request_with_retry("POST", url, json=payload, headers=headers, timeout=15)
@@ -458,6 +472,25 @@ def fetch_workday(
 # ORCHESTRATOR
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _country_facets(tenant: str, wd_server: str, site: str, country: str) -> dict | None:
+    """Resolve the current country facet from the portal rather than hardcoding IDs."""
+    response = _request_with_retry('POST',_build_jobs_url(tenant,wd_server,site),
+        headers=_build_headers(tenant,wd_server,site),
+        json={'limit':20,'offset':0,'searchText':'','appliedFacets':{}},timeout=15)
+    if response is None or response.status_code != 200:
+        return None
+    try:
+        for facet in response.json().get('facets',[]):
+            if facet.get('descriptor') != 'Country':
+                continue
+            for value in facet.get('values',[]):
+                if value.get('descriptor','').casefold() == country.casefold():
+                    return {facet['facetParameter']:[value['id']]}
+    except (ValueError,KeyError,TypeError):
+        pass
+    return None
+
+
 def fetch_all_workday(companies_config: dict, profile: dict = None) -> list[dict]:
     """
     Fetch jobs from all Workday companies listed in companies.yaml.
@@ -501,7 +534,22 @@ def fetch_all_workday(companies_config: dict, profile: dict = None) -> list[dict
             continue
 
         try:
-            jobs = fetch_workday(name, tenant, wd_server, site)
+            terms = entry.get('search_terms') or ['']
+            options = {}
+            if entry.get('country'):
+                facets = _country_facets(tenant,wd_server,site,entry['country'])
+                if facets is None:
+                    logger.warning('Workday %s: could not resolve country %s; skipping unverified geography',name,entry['country'])
+                    continue
+                options['applied_facets'] = facets
+            jobs = []
+            seen = set()
+            for term in terms:
+                for job in fetch_workday(name, tenant, wd_server, site, search_text=term, **options):
+                    if job['url'] not in seen:
+                        seen.add(job['url'])
+                        jobs.append(job)
+                time.sleep(_PAGE_DELAY)
             all_jobs.extend(jobs)
             logger.info(f"Workday {name}: {len(jobs)} relevant jobs (tenant={tenant}, {wd_server}/{site})")
         except Exception as e:

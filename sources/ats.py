@@ -491,6 +491,36 @@ def fetch_personio(company_slug: str) -> list[dict]:
         return []
 
 
+def fetch_phonepe() -> list[dict]:
+    """Read the public feed used by PhonePe's own careers site; defer full JDs."""
+    from datetime import datetime, timezone
+    from urllib.parse import urlsplit
+    try:
+        response = requests.get('https://www.phonepe.com/apollo/job-postings/latest.json',timeout=15)
+        response.raise_for_status()
+        jobs = []
+        for record in response.json().get('results',[]):
+            if not isinstance(record,dict) or record.get('status') != 'PUBLIC':
+                continue
+            url = record.get('applyUrl') or ''
+            parts = urlsplit(url)
+            match = re.fullmatch(r'/([^/]+)/(\d+)(?:-[^/]*)?/?',parts.path)
+            if parts.hostname != 'jobs.smartrecruiters.com' or not match:
+                continue
+            timestamp = re.search(r'/Date\((\d+)\)/',record.get('updatedAt') or '')
+            posted = datetime.fromtimestamp(int(timestamp.group(1))/1000,tz=timezone.utc).isoformat() if timestamp else ''
+            jobs.append({'title':record.get('title',''),'company':'PhonePe',
+                         'location':record.get('location') or 'Not specified',
+                         'description':f"{record.get('title','')}. Department: {record.get('department','')}",
+                         'description_complete':False,'url':url,'source':'smartrecruiters',
+                         'posted_at':posted,'salary':'',
+                         '_smartrecruiters_company':match.group(1),'_smartrecruiters_id':match.group(2)})
+        return jobs
+    except (requests.RequestException,ValueError,TypeError) as exc:
+        logger.warning('PhonePe careers feed failed (%s)',type(exc).__name__)
+        return []
+
+
 # ─────────────────────────────────────────────────────────────────
 # ORCHESTRATOR
 # ─────────────────────────────────────────────────────────────────
@@ -550,6 +580,13 @@ def fetch_all_ats(companies_config: dict) -> list[dict]:
         jobs = fetch_personio(company)
         all_jobs.extend(jobs)
         logger.info(f"Personio {company}: {len(jobs)} jobs")
+
+    # Explicit employer feeds avoid reviving the disabled platform-wide poller.
+    for employer in companies_config.get('direct_feeds') or []:
+        if employer == 'phonepe':
+            jobs = fetch_phonepe()
+            all_jobs.extend(jobs)
+            logger.info('PhonePe official feed: %d public jobs',len(jobs))
 
     logger.info(f"ATS total: {len(all_jobs)} raw jobs")
     return all_jobs

@@ -21,10 +21,8 @@
 # Greenhouse US — endpoint: boards.greenhouse.io/v1/boards/{SLUG}/jobs?content=true
 greenhouse:
   - razorpaysoftwareprivatelimited  # ✅ verified — 57 jobs
-  - phonepe
   - twitch
   - airbnb
-  - postman
   # - spacex
   - faire
   - duolingo
@@ -180,8 +178,7 @@ bamboohr:
 
 # Recruitee — list: {SLUG}.recruitee.com/api/offers/  (JSON, description inside)
 #             page: {SLUG}.recruitee.com/
-recruitee:
-  - salesforce         # Salesforce India
+recruitee: []  # Salesforce moved to the verified Workday tenant below
 
 # Personio — list: {SLUG}.jobs.personio.de/xml?language=en  (XML feed, no auth needed)
 #            page: {SLUG}.jobs.personio.de/
@@ -230,3 +227,20 @@ workday:
     tenant: workday
     wd_server: wd5
     site: workday
+
+  - name: Postman
+    tenant: postman
+    wd_server: wd108
+    site: careers
+    search_terms: [intern, graduate, associate, backend, software]
+
+  - name: Salesforce
+    tenant: salesforce
+    wd_server: wd12
+    site: External_Career_Site
+    country: India
+    search_terms: [intern, graduate, associate, "software engineer"]
+
+# Public feed linked by PhonePe's careers frontend (migrated off Greenhouse).
+direct_feeds:
+  - phonepe

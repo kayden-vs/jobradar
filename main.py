@@ -196,7 +196,7 @@ def run(profile_path: str, dry_run: bool = False):
 
     if source_enabled("yc"):
         logger.info("--- Fetching YC Jobs ---")
-        fetch_source("yc", lambda: fetch_yc())
+        fetch_source("yc", lambda: fetch_yc(profile))
 
     if source_enabled("serper"):
         logger.info("--- Fetching via Serper discovery ---")

@@ -22,6 +22,9 @@ def enrich(job):
             soup = BeautifulSoup(response.text, 'html.parser')
             node = soup.select_one('#details_container, .internship_details, .detail_view')
             text = node.get_text(' ', strip=True) if node else ''
+        elif job.get('_smartrecruiters_company') and job.get('_smartrecruiters_id'):
+            from sources.ats import _fetch_smartrecruiters_jd
+            text = _fetch_smartrecruiters_jd(job['_smartrecruiters_company'],job['_smartrecruiters_id'])
         elif job.get('_naukri_job_id'):
             from sources.naukri import lazy_fetch_naukri_detail
             text = lazy_fetch_naukri_detail(job)

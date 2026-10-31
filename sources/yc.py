@@ -17,6 +17,9 @@ This two-phase approach means check_experience in prefilter.py actually has
 real description text to work with, so "3+ years" gets correctly rejected.
 """
 
+import json
+from urllib.parse import urljoin, urlsplit
+from bs4 import BeautifulSoup
 import re
 import logging
 import time
@@ -30,14 +33,11 @@ logger = logging.getLogger(__name__)
 # ─────────────────────────────────────────────────────────────────
 
 YC_SEARCH_URLS = [
-    # Backend + intern/fulltime + remote
-    "https://www.ycombinator.com/jobs?q=backend&type=fulltime,intern&remote=true",
-    # TypeScript / Node.js backend
-    "https://www.ycombinator.com/jobs?q=typescript+backend&type=fulltime,intern",
-    # Golang
-    "https://www.ycombinator.com/jobs?q=golang&type=fulltime,intern",
-    # India location — catches non-remote India roles
-    "https://www.ycombinator.com/jobs?q=backend&location=india",
+    # These are real server-side routes. The old ?q=/location= parameters
+    # returned the generic landing page rather than applying search filters.
+    "https://www.ycombinator.com/jobs/role/software-engineer/india",
+    "https://www.ycombinator.com/jobs/role/software-engineer/remote",
+    "https://www.ycombinator.com/jobs/role/software-engineer",
 ]
 
 REQUEST_DELAY   = 2.0   # seconds between requests (polite crawl)
@@ -106,181 +106,93 @@ def _fetch(url: str, timeout: int = 20):
 # PHASE 1: LISTING PAGE → card URLs
 # ─────────────────────────────────────────────────────────────────
 
-def _parse_listing_page(page, seen: set) -> list[tuple[str, str, str]]:
-    """
-    Extract (job_url, raw_title, card_text) tuples from a YC jobs listing page.
-    Applies cheap title + location pre-screens to avoid fetching irrelevant pages.
-
-    Returns list of (job_url, title, card_text) for cards that survived screening.
-    """
-    results = []
-
+def _embedded_props(page) -> dict:
+    nodes = page.css('[data-page]')
+    if not nodes:
+        return {}
     try:
-        # YC job cards: <a href="/jobs/XXXXX-title"> links
-        cards = page.css("a[href*='/jobs/']")
-        if not cards:
-            cards = page.css("div[class*='job'] a, li[class*='job'] a")
+        return json.loads(nodes[0].attrib.get('data-page','{}')).get('props',{})
+    except (ValueError, TypeError):
+        return {}
 
-        for card in cards[:MAX_JOBS_PER_SEARCH * 3]:  # over-fetch then filter
-            href = card.attrib.get("href", "")
-            if not href:
-                continue
 
-            job_url = ("https://www.ycombinator.com" + href) if href.startswith("/") else href
+def _eligible_card(title: str, location: str, experience: str, max_experience: int) -> bool:
+    if not _KEEP_TITLE.search(title) or _SKIP_TITLE.search(title):
+        return False
+    minimum = re.match(r'(\d+)\s*(?:\+|years?|[-–])', experience)
+    if minimum and int(minimum.group(1)) > max_experience:
+        return False
+    india = re.search(r'\b(india|IN|bangalore|bengaluru|mumbai|hyderabad|delhi|pune|kolkata|chennai|worldwide|anywhere)\b',location,re.I)
+    foreign = re.search(r'\b(US|USA|GB|UK|CA|FR|DE|CH|EU|SG|united states|canada|london|paris|singapore)\b',location,re.I) or _US_CITIES.search(location)
+    return bool(india) or not foreign
 
-            # Must be a job URL, not a company/blog/nav page
-            if not re.search(r'/jobs/\d', job_url):
-                continue
-            if job_url in seen:
-                continue
 
-            # Extract card text
-            card_text = card.get_all_text() if hasattr(card, "get_all_text") else (card.text or "")
-            card_text = card_text.strip()
-            if not card_text:
-                continue
-
-            lines = [l.strip() for l in card_text.splitlines() if l.strip()]
-
-            # Title is usually line 0. Skip if it looks like a nav/aggregate page.
-            raw_title = lines[0] if lines else ""
-            if not raw_title or len(raw_title) < 4:
-                continue
-
-            # ── Cheap pre-screens on card text ──────────────────────────
-            card_lower = card_text.lower()
-
-            # 1. Must have a tech-relevant title
-            if not _KEEP_TITLE.search(raw_title):
-                logger.debug(f"YC card skip (irrelevant title): '{raw_title}'")
-                continue
-
-            # 2. Skip obviously senior/non-target titles
-            if _SKIP_TITLE.search(raw_title):
-                logger.debug(f"YC card skip (senior/non-target title): '{raw_title}'")
-                continue
-
-            # 3. Skip US-city-only roles visible in the card
-            if _US_CITIES.search(card_text) and "india" not in card_lower and "remote" not in card_lower:
-                logger.debug(f"YC card skip (US location): '{raw_title}'")
-                continue
-
-            seen.add(job_url)
-            results.append((job_url, raw_title, card_text))
-
-            if len(results) >= MAX_JOBS_PER_SEARCH:
-                break
-
-    except Exception as e:
-        logger.warning(f"YC listing parse error: {e}")
-
-    return results
+def _parse_listing_page(page, seen: set, max_experience: int = 1) -> list[tuple[str, str, dict]]:
+    """Use YC's embedded records, retaining structured location and experience."""
+    props = _embedded_props(page)
+    records = props.get('jobPostings')
+    if not isinstance(records,list):
+        records = []
+        for card in page.css("a[href*='/jobs/']"):
+            text = card.get_all_text().strip()
+            records.append({'url':card.attrib.get('href',''),'title':text.splitlines()[0] if text else ''})
+    result = []
+    for record in records:
+        if not isinstance(record,dict):
+            continue
+        url = urljoin('https://www.ycombinator.com',record.get('url',''))
+        if urlsplit(url).netloc != 'www.ycombinator.com' or not re.search(r'/companies/[^/]+/jobs/[A-Za-z0-9]+(?:-|$)',url):
+            continue
+        if url in seen:
+            continue
+        title = (record.get('title') or '').strip()
+        if not _eligible_card(title,record.get('location') or '',str(record.get('minExperience') or ''),max_experience):
+            continue
+        seen.add(url)
+        result.append((url,title,record))
+        if len(result) >= MAX_JOBS_PER_SEARCH:
+            break
+    return result
 
 
 # ─────────────────────────────────────────────────────────────────
 # PHASE 2: INDIVIDUAL JOB PAGE → full description + structured fields
 # ─────────────────────────────────────────────────────────────────
 
-_EXP_RE = re.compile(
-    r'(\d+)\+?\s*[-–to]+\s*(\d+)\s*years?|'   # "3-5 years", "3 to 5 years"
-    r'(\d+)\+\s*years?|'                        # "3+ years"
-    r'(\d+)\s*years?\s+(of\s+)?experience',     # "3 years of experience"
-    re.IGNORECASE,
-)
-_SALARY_RE = re.compile(
-    r'(?:\$[\d,]+(?:k|K)?(?:\s*[-–]\s*\$[\d,]+(?:k|K)?)?'  # $X–$Y or $Xk
-    r'|₹[\d,]+(?:\s*[-–]\s*₹[\d,]+)?'                       # ₹X–₹Y
-    r'|\d+\s*LPA|\d+\s*lpa)',                                 # Xk LPA
-    re.IGNORECASE,
-)
-
-
-def _parse_job_page(page, job_url: str, raw_title: str, card_text: str) -> dict | None:
-    """
-    Parse an individual YC job page to extract full description + structured fields.
-    Returns a job dict, or None if the page is unparseable.
-    """
-    try:
-        # Full page text (stripped of nav/footer)
-        full_text = page.get_all_text(ignore_tags=["script", "style", "nav", "footer", "header"])
-        full_text = re.sub(r'\s+', ' ', full_text).strip()
-
-        if len(full_text) < 100:
-            return None
-
-        # ── Company name ────────────────────────────────────────────────────
-        # YC job page URL: /companies/{company-slug}/jobs/{id}-{title}
-        # The slug is the most reliable source — always present.
-        company = "YC Company"
-        slug_m = re.search(r'/companies/([^/]+)/jobs/', job_url)
-        if slug_m:
-            company = slug_m.group(1).replace("-", " ").title()
-
-        # Try to refine with page content (company name link or heading)
-        for sel in ("a[href*='/companies/']", "[class*='company']", "h2"):
-            try:
-                els = page.css(sel)
-                if els:
-                    candidate = (els[0].get_all_text() if hasattr(els[0], "get_all_text")
-                                 else els[0].text or "").strip()
-                    if 2 < len(candidate) < 60 and "\n" not in candidate:
-                        company = candidate
-                        break
-            except Exception:
-                pass
-
-        # ── Location ────────────────────────────────────────────────────────
-        location = "remote"
-        text_lower = full_text.lower()
-        if "india" in text_lower:
-            location = "india"
-        if "remote" in text_lower:
-            location = "remote" if "india" not in text_lower else "india / remote"
-        if _US_CITIES.search(full_text) and "india" not in text_lower and "remote" not in text_lower:
-            return None  # US-only in-office — skip entirely
-
-        # ── Salary ──────────────────────────────────────────────────────────
-        salary = ""
-        m = _SALARY_RE.search(full_text[:3000])
-        if m:
-            salary = m.group(0).strip()
-
-        # ── Posted at ───────────────────────────────────────────────────────
-        # YC pages sometimes have "Posted X days ago" in meta or page text
-        posted_at = ""
-        date_m = re.search(
-            r'posted\s+(\d+\s+(?:hour|day|week|month)s?\s+ago)',
-            full_text, re.IGNORECASE
-        )
-        if date_m:
-            posted_at = date_m.group(1)
-
-        # ── Description (used by prefilter.check_experience) ────────────────
-        # Use full page text — this is what makes the experience check actually work.
-        # Truncate to 4000 chars to keep scorer prompt size reasonable.
-        description = full_text[:4000]
-
-        return {
-            "title":       raw_title,
-            "company":     company,
-            "location":    location,
-            "description": description,
-            "url":         job_url,
-            "source":      "yc",
-            "salary":      salary,
-            "posted_at":   posted_at,
-        }
-
-    except Exception as e:
-        logger.debug(f"YC job page parse error for {job_url}: {e}")
-        return None
+def _parse_job_page(page, job_url: str, raw_title: str, card: dict) -> dict | None:
+    """Read the actual JobPosting, excluding related jobs and page navigation."""
+    props = _embedded_props(page)
+    metadata = props.get('job') or card
+    for script in page.css('script[type="application/ld+json"]'):
+        try:
+            record = json.loads(script.text or '{}')
+        except (ValueError,TypeError):
+            continue
+        if not isinstance(record,dict) or record.get('@type') != 'JobPosting':
+            continue
+        description = BeautifulSoup(record.get('description') or '','html.parser').get_text(' ',strip=True)
+        if len(description)<100:
+            continue
+        organization = record.get('hiringOrganization') or {}
+        company = organization.get('name') or metadata.get('companyName','')
+        location = metadata.get('location') or ''
+        if not location:
+            places = record.get('jobLocation',[])
+            if isinstance(places,dict): places=[places]
+            location = ' / '.join(', '.join(str(v) for v in (place.get('address') or {}).values() if v and v != 'PostalAddress') for place in places)
+        return {'title':record.get('title') or raw_title,'company':company,
+                'location':location or 'Not specified','description':description[:12000],
+                'description_complete':True,'url':job_url,'source':'yc',
+                'salary':metadata.get('salaryRange') or '','posted_at':record.get('datePosted','')}
+    logger.warning('YC detail has no complete JobPosting: %s',job_url)
+    return None
 
 
 # ─────────────────────────────────────────────────────────────────
 # MAIN ENTRY POINT
 # ─────────────────────────────────────────────────────────────────
 
-def fetch_yc() -> list[dict]:
+def fetch_yc(profile: dict | None = None) -> list[dict]:
     """
     Two-phase YC scraper:
       1. Fetch each search URL listing page, screen cards cheaply.
@@ -290,9 +202,10 @@ def fetch_yc() -> list[dict]:
     to correctly reject "3+ years" and similar requirements that never appear
     in listing card text.
     """
+    max_experience = (profile or {}).get("candidate",{}).get("experience",{}).get("max_required",1)
     all_jobs: list[dict] = []
     seen_urls: set[str]  = set()
-    candidates: list[tuple[str, str, str]] = []  # (url, title, card_text)
+    candidates: list[tuple[str, str, dict]] = []  # (url, title, structured metadata)
 
     # ── Phase 1: listing pages ───────────────────────────────────────────────
     for search_url in YC_SEARCH_URLS:
@@ -302,8 +215,8 @@ def fetch_yc() -> list[dict]:
             logger.warning(f"YC listing fetch failed: {search_url}")
             continue
 
-        batch = _parse_listing_page(page, seen_urls)
-        logger.info(f"YC listing '{search_url.split('?')[1][:40]}': {len(batch)} candidates")
+        batch = _parse_listing_page(page, seen_urls, max_experience)
+        logger.info(f"YC listing '{search_url.rsplit('/',1)[-1]}': {len(batch)} candidates")
         candidates.extend(batch)
 
     logger.info(f"YC Phase 1 complete: {len(candidates)} candidate job pages to fetch")

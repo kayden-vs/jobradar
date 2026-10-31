@@ -46,11 +46,16 @@ import requests
 
 logger = logging.getLogger(__name__)
 
+
+class NaukriAccessBlocked(RuntimeError):
+    """Current API explicitly denied automated access for this run."""
+
+
 # -----------------------------------------------------------------
 # CONSTANTS
 # -----------------------------------------------------------------
 
-_SEARCH_URL = "https://www.naukri.com/jobapi/v2/search"
+_SEARCH_URL = "https://www.naukri.com/jobapi/v3/search"
 _DETAIL_URL = "https://www.naukri.com/jobapi/v2/job/{jobId}"
 
 _HEADERS = {
@@ -206,13 +211,8 @@ def _get_with_backoff(url: str, params: dict = None) -> "requests.Response | Non
                 time.sleep(delay)
                 delay *= 2
                 continue
-            if resp.status_code == 406:
-                logger.error(
-                    "Naukri returned 406 Not Acceptable — verify that all required "
-                    "headers (appid, systemid, User-Agent, Accept, Referer) are set "
-                    "correctly in sources/naukri.py."
-                )
-                return None
+            if resp.status_code in (401,403,406):
+                raise NaukriAccessBlocked(f'HTTP {resp.status_code}; interactive verification may be required')
             if resp.status_code == 404:
                 logger.debug("Naukri HTTP 404 for %s (likely empty or out-of-bounds page)", url)
             else:
@@ -239,7 +239,10 @@ def _fetch_job_detail(job_id: str) -> str:
     Returns "" on any failure — caller falls back to truncated snippet.
     """
     url  = _DETAIL_URL.format(jobId=job_id)
-    resp = _get_with_backoff(url)
+    try:
+        resp = _get_with_backoff(url)
+    except NaukriAccessBlocked:
+        return ""
     if resp is None:
         return ""
     try:
@@ -271,7 +274,7 @@ def lazy_fetch_naukri_detail(job: dict) -> str:
     if not job_id:
         return ""
     desc = job.get("description", "")
-    if len(desc) >= 150:
+    if job.get("description_complete") is True:
         return desc   # Already have enough — skip network call
     time.sleep(_INTER_REQUEST_DELAY)  # polite delay BEFORE the call
     return _fetch_job_detail(job_id)
@@ -305,6 +308,8 @@ def _fetch_search_page(
         "keyword":     keyword,
         "location":    location,
         "pageNo":      page_no,
+        "experience":  max_exp_years,
+        "src":         "jobsearchDesk",
     }
 
     resp = _get_with_backoff(_SEARCH_URL, params=params)
@@ -369,7 +374,8 @@ def _fetch_search_page(
                     cities.append(chunk.split()[-1].strip().title())
             location_val = ", ".join(c for c in cities if c) or location
         else:
-            location_val = location
+            placeholders = {p.get('type'):p.get('label','') for p in card.get('placeholders',[]) if isinstance(p,dict)}
+            location_val = placeholders.get('location') or location
 
         # URL: 'urlStr' is the canonical direct listing URL
         url_str   = card.get("urlStr", "") or card.get("jdURL", "")
@@ -377,6 +383,10 @@ def _fetch_search_page(
         # minExp/maxExp come as strings (e.g. '0', '2') — cast to float for comparison
         min_exp   = card.get("minExp")
         max_exp   = card.get("maxExp")
+        if min_exp is None:
+            exp_label = next((p.get('label','') for p in card.get('placeholders',[]) if isinstance(p,dict) and p.get('type')=='experience'),'')
+            minimum = re.match(r'(\d+)', exp_label)
+            if minimum: min_exp = minimum.group(1)
         # keywords field name in actual response
         skills    = card.get("keywords", "") or card.get("tagsAndSkills", "")
         salary    = _build_salary(card)
@@ -500,7 +510,11 @@ def fetch_naukri(profile: dict = None) -> list:
     for keyword in keywords:
         for location in locations:
             for page_no in range(1, pages + 1):
-                batch = _fetch_search_page(keyword, location, page_no, max_age_days, max_exp_years)
+                try:
+                    batch = _fetch_search_page(keyword, location, page_no, max_age_days, max_exp_years)
+                except NaukriAccessBlocked as exc:
+                    logger.warning('Naukri unavailable: %s. Stopping remaining searches.', exc)
+                    return stage1_jobs
                 for job in batch:
                     jid = job.get("_naukri_job_id", "")
                     if jid and jid in seen_job_ids:
