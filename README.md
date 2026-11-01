@@ -393,20 +393,51 @@ python main.py
 
 ## ⏰ Automation
 
-### Option A — Linux Cron (WSL / EC2)
+### Option A — Windows laptop with WSL (no cloud hosting)
+
+Use Windows Task Scheduler with [`scripts/laptop_tick.py`](scripts/laptop_tick.py)
+to target **9 AM and 7 PM IST** while your laptop is awake and your Windows account
+is signed in. Windows checks every 15 minutes and at login; the helper runs the
+pipeline at most once per current morning/evening window.
+
+- **No backlog:** after two days off, only the current window is considered. Missed windows are discarded.
+- **No back-to-back catch-up:** a six-hour minimum gap can delay or skip the evening run after a late morning run.
+- **No overlapping runs:** the helper shares the portable runner's pipeline lock.
+- **Offline before launch:** check again later without consuming the window. Once launched, failed or interrupted attempts consume that window to prevent repeated retries.
+- **Laptop availability:** locking the screen is fine; sleeping, shutting down, or signing out prevents runs. Two daily runs depend on sufficient awake time.
+
+Follow the **[step-by-step laptop scheduling guide](docs/laptop-scheduling.md)**
+for environment checks, the PowerShell registration command, logs, recovery,
+and pause/resume instructions. Its examples use Arch WSL, Linux user `rohit`,
+and `/home/rohit/projects/jobradar`; adapt those values to your installation.
+The helper currently uses `profile.yaml` and fixed India-time windows.
+
+To inspect eligibility from your WSL project directory without running jobs:
 
 ```bash
-# Run at 8 AM and 6 PM daily
-0 8,18 * * * cd /path/to/jobradar && ./run.sh >> data/cron.log 2>&1
+venv/bin/python scripts/laptop_tick.py --status
 ```
 
-### Option B — Windows Task Scheduler
+Keep `data/laptop-schedule.json` between runs; it records which window was
+attempted. Use the guide's scheduled-task trigger for manual checks too, so
+they respect the same frequency limits.
 
-```powershell
-$action  = New-ScheduledTaskAction -Execute "wsl" -Argument "-d archlinux -- bash /home/user/jobradar/run.sh"
-$trigger = New-ScheduledTaskTrigger -Daily -At "8:00AM"
-Register-ScheduledTask -TaskName "JobRadar" -Action $action -Trigger $trigger -RunLevel Highest
+### Option B — Linux cron on an available host
+
+Use the portable runner on a Linux host that is running at the scheduled times.
+Create `data/` first, then add this entry with `crontab -e`:
+
+```bash
+# Run at 8 AM and 6 PM daily, in the cron host's timezone
+0 8,18 * * * cd /path/to/jobradar && bash scripts/run_pipeline.sh >> data/cron.log 2>&1
 ```
+
+Cron does not start a stopped WSL distribution or catch up missed runs. For a
+laptop that is frequently off, use Option A. Configure only one automatic
+scheduler for a given installation.
+
+**`run.sh` is EC2-specific and shuts down the machine when it exits. Do not
+schedule it on your laptop.**
 
 ---
 
